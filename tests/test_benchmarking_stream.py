@@ -3,6 +3,7 @@ Tests for retained benchmarking utilities.
 """
 
 import numpy as np
+import pytest
 
 from numcompute_stream.benchmarking import (
     timeit,
@@ -148,3 +149,83 @@ def test_compare_streaming_models_returns_one_result_per_model():
     assert len(results) == 2
     assert results[0]["name"] == "dummy_a"
     assert results[1]["name"] == "dummy_b"
+def test_timeit_rejects_zero_repeats():
+    with pytest.raises(ValueError):
+        timeit(np.sum, np.array([1, 2, 3]), repeats=0)
+
+
+def test_timeit_rejects_negative_repeats():
+    with pytest.raises(ValueError):
+        timeit(np.sum, np.array([1, 2, 3]), repeats=-2)
+
+
+def test_run_vectorisation_benchmarks_rejects_invalid_n():
+    with pytest.raises(ValueError):
+        run_vectorisation_benchmarks(n=0, repeats=2, print_results=False)
+
+
+def test_make_stream_chunks_rejects_mismatched_lengths():
+    X = np.arange(20).reshape(10, 2)
+    y = np.arange(9)
+
+    with pytest.raises(ValueError):
+        list(make_stream_chunks(X, y, chunk_size=4))
+
+
+def test_make_stream_chunks_rejects_invalid_chunk_size():
+    X = np.arange(20).reshape(10, 2)
+    y = np.arange(10)
+
+    with pytest.raises(ValueError):
+        list(make_stream_chunks(X, y, chunk_size=0))
+
+
+def test_benchmark_streaming_model_rejects_empty_chunks():
+    model = DummyStreamingClassifier()
+
+    with pytest.raises(ValueError):
+        benchmark_streaming_model(model, [])
+
+
+def test_benchmark_streaming_model_requires_partial_fit():
+    class NoPartialFit:
+        def predict(self, X):
+            return np.zeros(X.shape[0])
+
+    X = np.ones((5, 2))
+    y = np.zeros(5)
+    chunks = [(X, y)]
+
+    with pytest.raises(AttributeError):
+        benchmark_streaming_model(NoPartialFit(), chunks)
+
+
+def test_benchmark_streaming_model_requires_predict():
+    class NoPredict:
+        def partial_fit(self, X, y):
+            return self
+
+    X = np.ones((5, 2))
+    y = np.zeros(5)
+    chunks = [(X, y)]
+
+    with pytest.raises(AttributeError):
+        benchmark_streaming_model(NoPredict(), chunks)
+
+
+def test_benchmark_streaming_model_rejects_bad_chunk_shapes():
+    model = DummyStreamingClassifier()
+
+    X = np.ones((5, 2))
+    y = np.zeros(4)
+    chunks = [(X, y)]
+
+    with pytest.raises(ValueError):
+        benchmark_streaming_model(model, chunks)
+
+
+def test_compare_streaming_models_rejects_empty_chunks():
+    models = {"dummy": DummyStreamingClassifier()}
+
+    with pytest.raises(ValueError):
+        compare_streaming_models(models, [])

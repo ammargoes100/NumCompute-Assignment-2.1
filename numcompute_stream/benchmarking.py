@@ -19,6 +19,8 @@ def timeit(fn, *args, repeats=10, **kwargs):
     Time a callable over multiple runs.
     """
     times = []
+    if not isinstance(repeats, int) or repeats <= 0:
+        raise ValueError("repeats must be a positive integer")
 
     for _ in range(repeats):
         start = time.perf_counter()
@@ -139,10 +141,21 @@ def _euclid_vec(a, b):
 def _softmax_loop(x):
     """
     Stable softmax using a loop-style implementation.
+
+    The max shift is used so very large input values do not overflow.
     """
-    max_value = max(x)
+    x = np.asarray(x, dtype=float)
+
+    if x.size == 0:
+        raise ValueError("softmax input cannot be empty")
+
+    max_value = float(np.max(x))
     exps = [np.exp(value - max_value) for value in x]
     total = sum(exps)
+
+    if total == 0:
+        return [1.0 / len(x)] * len(x)
+
     return [value / total for value in exps]
 
 
@@ -150,19 +163,32 @@ def _softmax_vec(x):
     """
     Stable softmax using a vectorised NumPy implementation.
     """
-    e = np.exp(x - np.max(x))
-    return e / e.sum()
+    x = np.asarray(x, dtype=float)
+
+    if x.size == 0:
+        raise ValueError("softmax input cannot be empty")
+
+    shifted = x - np.max(x)
+    exp_values = np.exp(shifted)
+    total = np.sum(exp_values)
+
+    if total == 0:
+        return np.full_like(x, 1.0 / x.size, dtype=float)
+
+    return exp_values / total
 
 
 def run_vectorisation_benchmarks(n=10_000, repeats=20, seed=42, print_results=True):
     """
     Run loop-vs-vectorised benchmark examples.
     """
+    if n <= 0:
+        raise ValueError("n must be positive")
     rng = np.random.default_rng(seed)
 
     a = rng.random(n)
     b = rng.random(n)
-    X = rng.random((n // 10, 10))
+    X = rng.random((max(1, n // 10), 10))
 
     results = [
         compare("dot product", _dot_loop, _dot_vec, a, b, repeats=repeats),
