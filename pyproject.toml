@@ -1,0 +1,13 @@
+[project]
+name = "numcompute"
+version = "0.1.0"
+description = "A high-performance NumPy toolkit"
+authors = [{name = "ExceptionHandlers"}]
+dependencies = ["numpy"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["numcompute"]
