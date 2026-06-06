@@ -185,6 +185,160 @@ def run_all(n=10_000, repeats=20, seed=42):
     """
     return run_vectorisation_benchmarks(n=n, repeats=repeats, seed=seed)
 
+# ---------------------------------------------------------------------
+# Streaming model benchmarking utilities
+# ---------------------------------------------------------------------
+
+def _accuracy(y_true, y_pred):
+    """
+    Compute simple classification accuracy.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
+
+    if y_true.size == 0:
+        return 0.0
+
+    return float(np.mean(y_true == y_pred))
+
+
+def benchmark_streaming_model(model, chunks, name="model"):
+    """
+    Benchmark one streaming model over a sequence of chunks.
+
+    The model must implement partial_fit(X, y) and predict(X).
+    """
+    if not hasattr(model, "partial_fit"):
+        raise AttributeError("model must implement partial_fit(X, y)")
+
+    if not hasattr(model, "predict"):
+        raise AttributeError("model must implement predict(X)")
+
+    fit_times = []
+    predict_times = []
+    accuracies = []
+
+    total_correct = 0
+    total_seen = 0
+    chunk_count = 0
+
+    for X_chunk, y_chunk in chunks:
+        X_chunk = np.asarray(X_chunk)
+        y_chunk = np.asarray(y_chunk)
+
+        if X_chunk.shape[0] != y_chunk.shape[0]:
+            raise ValueError("X_chunk and y_chunk must contain the same number of samples")
+
+        start_fit = time.perf_counter()
+        model.partial_fit(X_chunk, y_chunk)
+        fit_times.append(time.perf_counter() - start_fit)
+
+        start_predict = time.perf_counter()
+        y_pred = model.predict(X_chunk)
+        predict_times.append(time.perf_counter() - start_predict)
+
+        chunk_accuracy = _accuracy(y_chunk, y_pred)
+        accuracies.append(chunk_accuracy)
+
+        total_correct += int(np.sum(y_chunk == y_pred))
+        total_seen += int(y_chunk.size)
+        chunk_count += 1
+
+    if chunk_count == 0:
+        raise ValueError("chunks must contain at least one chunk")
+
+    fit_times = np.asarray(fit_times, dtype=float)
+    predict_times = np.asarray(predict_times, dtype=float)
+    accuracies = np.asarray(accuracies, dtype=float)
+
+    final_accuracy = total_correct / total_seen if total_seen > 0 else 0.0
+
+    return {
+        "name": name,
+        "chunks": chunk_count,
+        "fit_times": fit_times.tolist(),
+        "predict_times": predict_times.tolist(),
+        "accuracies": accuracies.tolist(),
+        "mean_fit_time": float(np.mean(fit_times)),
+        "mean_predict_time": float(np.mean(predict_times)),
+        "final_accuracy": float(final_accuracy),
+    }
+
+
+def compare_streaming_models(models, chunks):
+    """
+    Benchmark multiple streaming models on the same data chunks.
+
+    The chunks are converted to a list so each model receives the same stream.
+    """
+    chunks = list(chunks)
+
+    if len(chunks) == 0:
+        raise ValueError("chunks must contain at least one chunk")
+
+    results = []
+
+    for name, model in models.items():
+        result = benchmark_streaming_model(model, chunks, name=name)
+        results.append(result)
+
+    return results
+
+
+def print_streaming_table(results):
+    """
+    Print a formatted streaming model benchmark table.
+    """
+    col = "{:<24} {:>8} {:>16} {:>16} {:>14}"
+
+    print("\n" + "=" * 86)
+    print(
+        col.format(
+            "Model",
+            "Chunks",
+            "Fit/chunk (ms)",
+            "Pred/chunk (ms)",
+            "Final Acc",
+        )
+    )
+    print("=" * 86)
+
+    for result in results:
+        fit_ms = result["mean_fit_time"] * 1000
+        pred_ms = result["mean_predict_time"] * 1000
+
+        print(
+            col.format(
+                result["name"],
+                result["chunks"],
+                f"{fit_ms:.3f}",
+                f"{pred_ms:.3f}",
+                f"{result['final_accuracy']:.3f}",
+            )
+        )
+
+    print("=" * 86 + "\n")
+
+
+def make_stream_chunks(X, y, chunk_size):
+    """
+    Split arrays into smaller chunks to simulate a data stream.
+    """
+    X = np.asarray(X)
+    y = np.asarray(y)
+
+    if X.shape[0] != y.shape[0]:
+        raise ValueError("X and y must contain the same number of samples")
+
+    if not isinstance(chunk_size, int) or chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+
+    for start in range(0, X.shape[0], chunk_size):
+        end = start + chunk_size
+        yield X[start:end], y[start:end]
 
 if __name__ == "__main__":
     run_vectorisation_benchmarks()
