@@ -147,7 +147,7 @@ class TestMinMaxScaler:
             scaler.fit(np.empty((0, 2)))
 
     def test_invalid_feature_range_raises(self):
-        with pytest.raises(ValueError, match="min must be <= max"):
+        with pytest.raises(ValueError, match="feature_range must be a tuple"):
             MinMaxScaler(feature_range=(5, 0))
 
     def test_integer_input_becomes_float(self):
@@ -346,6 +346,65 @@ class TestStreamingPreprocessing:
 
     def test_partial_fit_feature_mismatch_raises(self):
         scaler = StandardScaler()
+        scaler.partial_fit(np.array([[1.0, 2.0]]))
+
+        with pytest.raises(ValueError):
+            scaler.partial_fit(np.array([[1.0, 2.0, 3.0]]))
+class TestPreprocessingValidation:
+    def test_standard_scaler_transform_before_fit_raises(self):
+        scaler = StandardScaler()
+
+        with pytest.raises(ValueError):
+            scaler.transform(np.array([[1.0, 2.0]]))
+
+    def test_minmax_scaler_transform_before_fit_raises(self):
+        scaler = MinMaxScaler()
+
+        with pytest.raises(ValueError):
+            scaler.transform(np.array([[1.0, 2.0]]))
+
+    def test_one_hot_transform_before_fit_raises(self):
+        enc = OneHotEncoder()
+
+        with pytest.raises(ValueError):
+            enc.transform(np.array(["red"]))
+
+    def test_simple_imputer_transform_before_fit_raises(self):
+        imputer = SimpleImputer()
+
+        with pytest.raises(ValueError):
+            imputer.transform(np.array([[np.nan]]))
+
+    def test_one_hot_invalid_handle_unknown_raises(self):
+        with pytest.raises(ValueError):
+            OneHotEncoder(handle_unknown="skip")
+
+    def test_minmax_invalid_feature_range_type_raises(self):
+        with pytest.raises(ValueError):
+            MinMaxScaler(feature_range=[0, 1])
+
+    def test_simple_imputer_unknown_strategy_raises(self):
+        imputer = SimpleImputer(strategy="mode")
+
+        with pytest.raises(ValueError):
+            imputer.fit(np.array([[1.0], [2.0]]))
+
+    def test_simple_imputer_partial_fit_feature_mismatch_raises(self):
+        imputer = SimpleImputer(strategy="mean")
+        imputer.partial_fit(np.array([[1.0, 2.0]]))
+
+        with pytest.raises(ValueError):
+            imputer.partial_fit(np.array([[1.0, 2.0, 3.0]]))
+
+    def test_one_hot_partial_fit_feature_mismatch_raises(self):
+        enc = OneHotEncoder()
+        enc.partial_fit(np.array([["red", "small"]]))
+
+        with pytest.raises(ValueError):
+            enc.partial_fit(np.array([["blue"]]))
+
+    def test_minmax_partial_fit_feature_mismatch_raises(self):
+        scaler = MinMaxScaler()
         scaler.partial_fit(np.array([[1.0, 2.0]]))
 
         with pytest.raises(ValueError):

@@ -158,8 +158,12 @@ class MinMaxScaler:
     """
 
     def __init__(self, feature_range=(0, 1)):
-        if feature_range[0] > feature_range[1]:
-            raise ValueError(f"min must be <= max, got {feature_range}")
+        if (
+            not isinstance(feature_range, tuple)
+            or len(feature_range) != 2
+            or feature_range[0] > feature_range[1]
+        ):
+            raise ValueError("feature_range must be a tuple (min, max) with min <= max")
 
         self.feature_range = feature_range
         self.scale_ = None
@@ -241,6 +245,9 @@ class OneHotEncoder:
     """
 
     def __init__(self, sparse_output=False, handle_unknown="error"):
+        if handle_unknown not in ("error", "ignore"):
+            raise ValueError("handle_unknown must be 'error' or 'ignore'")
+
         self.sparse_output = sparse_output
         self.handle_unknown = handle_unknown
         self.categories_ = None
