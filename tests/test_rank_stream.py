@@ -167,3 +167,60 @@ def test_percentile_hundred():
     result = percentile(values, 100)
 
     assert result == 30
+def test_rank_string_values_dense():
+    values = np.array(["b", "a", "a", "c"])
+
+    result = rank(values, method="dense")
+    expected = np.array([2, 1, 1, 3])
+
+    assert np.array_equal(result, expected)
+
+
+def test_rank_2d_array_raises():
+    with pytest.raises(ValueError):
+        rank(np.array([[1, 2], [3, 4]]))
+
+
+def test_percentile_2d_array_raises():
+    with pytest.raises(ValueError):
+        percentile(np.array([[1, 2], [3, 4]]), 50)
+
+
+def test_percentile_empty_array_raises():
+    with pytest.raises(ValueError):
+        percentile(np.array([]), 50)
+
+
+def test_percentile_nan_input_raises():
+    with pytest.raises(ValueError):
+        percentile(np.array([1.0, np.nan, 3.0]), 50)
+
+
+def test_percentile_invalid_q_low_raises():
+    with pytest.raises(ValueError):
+        percentile(np.array([1, 2, 3]), -1)
+
+
+def test_percentile_invalid_q_high_raises():
+    with pytest.raises(ValueError):
+        percentile(np.array([1, 2, 3]), 101)
+
+
+def test_percentile_rejects_non_numeric_q():
+    with pytest.raises(TypeError):
+        percentile(np.array([1, 2, 3]), "50")
+
+
+def test_percentile_rejects_bool_q():
+    with pytest.raises(TypeError):
+        percentile(np.array([1, 2, 3]), True)
+
+
+def test_percentile_invalid_interpolation_raises():
+    with pytest.raises(ValueError):
+        percentile(np.array([1, 2, 3]), 50, interpolation="nearest")
+
+
+def test_percentile_rejects_non_numeric_values():
+    with pytest.raises(ValueError):
+        percentile(np.array(["a", "b", "c"]), 50)

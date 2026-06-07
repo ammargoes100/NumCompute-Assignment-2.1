@@ -4,9 +4,36 @@ Ranking utilities for NumCompute-Stream.
 This module keeps the ranking and percentile helpers from the original
 NumCompute package. They are retained because they are useful for basic
 numerical analysis, tie handling, and percentile calculations.
+
+Example print statements from the original file are intentionally removed so
+the module can be imported without producing unwanted output.
 """
 
+import numbers
 import numpy as np
+
+
+def _validate_1d_non_empty(values, function_name):
+    """
+    Convert input to an array and check that it is a non-empty 1D array.
+    """
+    values = np.asarray(values)
+
+    if values.ndim != 1:
+        raise ValueError(f"{function_name} expects a 1D array")
+
+    if values.size == 0:
+        raise ValueError(f"{function_name} cannot operate on an empty array")
+
+    return values
+
+
+def _check_no_nan(values, function_name):
+    """
+    Reject NaN values for numeric arrays.
+    """
+    if np.issubdtype(values.dtype, np.number) and np.isnan(values).any():
+        raise ValueError(f"{function_name} does not support NaN values")
 
 
 def rank(values, method="average"):
@@ -25,16 +52,8 @@ def rank(values, method="average"):
     np.ndarray
         Rank values starting at 1.
     """
-    values = np.asarray(values)
-
-    if values.ndim != 1:
-        raise ValueError("rank expects a 1D array")
-
-    if values.size == 0:
-        raise ValueError("rank cannot operate on an empty array")
-
-    if np.issubdtype(values.dtype, np.number) and np.isnan(values).any():
-        raise ValueError("rank does not support NaN values")
+    values = _validate_1d_non_empty(values, "rank")
+    _check_no_nan(values, "rank")
 
     if method not in {"average", "dense", "ordinal"}:
         raise ValueError("method must be one of {'average', 'dense', 'ordinal'}")
@@ -62,7 +81,7 @@ def rank(values, method="average"):
             average_rank = (start + 1 + end) / 2.0
             sorted_ranks[start:end] = average_rank
 
-    elif method == "dense":
+    else:
         dense_rank_values = np.arange(1, starts.size + 1)
 
         for dense_rank, start, end in zip(dense_rank_values, starts, ends):
@@ -76,13 +95,13 @@ def rank(values, method="average"):
 
 def percentile(values, q, interpolation="linear"):
     """
-    Compute the q-th percentile of a 1D array.
+    Compute the q-th percentile of a 1D numeric array.
 
     Parameters
     ----------
     values : array-like of shape (n,)
         Input values.
-    q : float
+    q : int or float
         Percentile in the range [0, 100].
     interpolation : {"linear", "lower", "higher", "midpoint"}, default="linear"
         Interpolation method used when q falls between two values.
@@ -92,16 +111,11 @@ def percentile(values, q, interpolation="linear"):
     scalar
         Percentile value.
     """
-    values = np.asarray(values)
+    values = _validate_1d_non_empty(values, "percentile")
+    _check_no_nan(values, "percentile")
 
-    if values.ndim != 1:
-        raise ValueError("percentile expects a 1D array")
-
-    if values.size == 0:
-        raise ValueError("percentile cannot operate on an empty array")
-
-    if np.issubdtype(values.dtype, np.number) and np.isnan(values).any():
-        raise ValueError("percentile does not support NaN values")
+    if not isinstance(q, numbers.Real) or isinstance(q, bool):
+        raise TypeError("q must be a numeric value")
 
     if q < 0 or q > 100:
         raise ValueError("q must be in the range [0, 100]")
@@ -111,7 +125,10 @@ def percentile(values, q, interpolation="linear"):
             "interpolation must be one of {'linear', 'lower', 'higher', 'midpoint'}"
         )
 
-    sorted_values = np.sort(values, kind="stable")
+    if not np.issubdtype(values.dtype, np.number):
+        raise ValueError("percentile expects numeric values")
+
+    sorted_values = np.sort(values.astype(float), kind="stable")
     n = sorted_values.size
 
     if n == 1:
