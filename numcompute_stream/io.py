@@ -169,3 +169,99 @@ def load_csv_chunked(
                 arr = arr.reshape(1, -1)
 
             yield arr
+def read_csv_header(file_path, delimiter=","):
+    """
+    Read only the header row from a CSV file.
+
+    This is useful when chunked reading is used but column names are still
+    needed separately.
+    """
+    if not isinstance(file_path, str):
+        raise TypeError(f"file_path must be a string, got {type(file_path).__name__}")
+
+    with open(file_path, encoding="utf-8") as file:
+        first_line = file.readline().strip()
+
+    if first_line == "":
+        return None
+
+    return first_line.split(delimiter)
+
+
+def split_features_target(data, target_col=-1):
+    """
+    Split a numeric array into features X and target y.
+
+    Parameters
+    ----------
+    data : array-like of shape (n_samples, n_columns)
+        Full numeric data.
+    target_col : int, default=-1
+        Index of the target column.
+
+    Returns
+    -------
+    X : np.ndarray
+        Feature matrix.
+    y : np.ndarray
+        Target vector.
+    """
+    data = np.asarray(data)
+
+    if data.ndim != 2:
+        raise ValueError("data must be a 2D array")
+
+    if data.shape[1] < 2:
+        raise ValueError("data must contain at least one feature column and one target column")
+
+    n_cols = data.shape[1]
+
+    if target_col < 0:
+        target_col = n_cols + target_col
+
+    if target_col < 0 or target_col >= n_cols:
+        raise IndexError("target_col is out of range")
+
+    y = data[:, target_col]
+    X = np.delete(data, target_col, axis=1)
+
+    return X, y
+
+
+def load_csv_xy(file_path, target_col=-1, delimiter=",", fill_value=DEFAULT_FILL_VALUE, skip_header=True):
+    """
+    Load a full CSV file and split it into X features and y target.
+    """
+    data, columns = load_csv(
+        file_path=file_path,
+        delimiter=delimiter,
+        fill_value=fill_value,
+        skip_header=skip_header,
+    )
+
+    X, y = split_features_target(data, target_col=target_col)
+
+    return X, y, columns
+
+
+def load_csv_xy_chunked(
+    file_path,
+    target_col=-1,
+    chunk_size=100,
+    delimiter=",",
+    fill_value=DEFAULT_FILL_VALUE,
+    skip_header=True,
+):
+    """
+    Load a CSV file in chunks and yield X_chunk, y_chunk pairs.
+
+    This is the most convenient reader for streaming model training.
+    """
+    for chunk in load_csv_chunked(
+        file_path=file_path,
+        chunk_size=chunk_size,
+        delimiter=delimiter,
+        fill_value=fill_value,
+        skip_header=skip_header,
+    ):
+        yield split_features_target(chunk, target_col=target_col)

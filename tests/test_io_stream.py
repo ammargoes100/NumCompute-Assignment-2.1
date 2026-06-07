@@ -10,6 +10,10 @@ from numcompute_stream.io import (
     load_csv_fill_missing,
     load_csv_skip_missing_rows,
     load_csv_chunked,
+    read_csv_header,
+    split_features_target,
+    load_csv_xy,
+    load_csv_xy_chunked,
 )
 
 
@@ -144,3 +148,51 @@ def test_load_csv_chunked_reconstructs_missing_file(missing_csv):
 
     assert reconstructed.shape == full_data.shape
     assert np.allclose(reconstructed, full_data, equal_nan=True)
+def test_read_csv_header_returns_columns(numeric_csv):
+    columns = read_csv_header(numeric_csv)
+
+    assert columns == ["age", "score", "grade"]
+
+
+def test_split_features_target_default_last_column():
+    data = np.array([
+        [1.0, 2.0, 0.0],
+        [3.0, 4.0, 1.0],
+    ])
+
+    X, y = split_features_target(data)
+
+    assert X.shape == (2, 2)
+    assert y.shape == (2,)
+    assert np.array_equal(y, np.array([0.0, 1.0]))
+
+
+def test_split_features_target_middle_column():
+    data = np.array([
+        [1.0, 0.0, 2.0],
+        [3.0, 1.0, 4.0],
+    ])
+
+    X, y = split_features_target(data, target_col=1)
+
+    assert X.shape == (2, 2)
+    assert np.array_equal(y, np.array([0.0, 1.0]))
+
+
+def test_load_csv_xy_splits_features_and_target(numeric_csv):
+    X, y, columns = load_csv_xy(numeric_csv, target_col=-1)
+
+    assert X.shape == (3, 2)
+    assert y.shape == (3,)
+    assert columns == ["age", "score", "grade"]
+
+
+def test_load_csv_xy_chunked_yields_feature_target_pairs(large_csv):
+    chunks = list(load_csv_xy_chunked(large_csv, target_col=-1, chunk_size=60))
+
+    assert len(chunks) == 5
+
+    X_first, y_first = chunks[0]
+
+    assert X_first.shape == (60, 1)
+    assert y_first.shape == (60,)
