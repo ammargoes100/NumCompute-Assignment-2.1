@@ -1,4 +1,45 @@
+"""
+Pipeline utilities for NumCompute-Stream.
+
+This module builds on the lightweight Pipeline and FeatureUnion tools from the
+original NumCompute package. The batch fit, transform, fit_transform, and
+predict behaviour is retained because it is still useful for normal workflows
+and for transforming each incoming data chunk.
+
+Streaming support is added through partial_fit(), allowing transformers and
+models to be updated one chunk at a time.
+"""
+
 import numpy as np
+
+
+def _validate_named_steps(steps, name="steps"):
+    """
+    Validate a list of named pipeline steps.
+    """
+    if not isinstance(steps, list) or len(steps) == 0:
+        raise ValueError(f"{name} must be a non-empty list of (name, object) tuples")
+
+    seen_names = set()
+
+    for item in steps:
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise ValueError(f"{name} must contain (name, object) tuples")
+
+        step_name, step = item
+
+        if not isinstance(step_name, str) or step_name == "":
+            raise ValueError("step names must be non-empty strings")
+
+        if step_name in seen_names:
+            raise ValueError(f"duplicate step name found: {step_name}")
+
+        if step is None:
+            raise ValueError(f"step '{step_name}' cannot be None")
+
+        seen_names.add(step_name)
+
+
 class Pipeline:
     """
     Chain a sequence of transformer and estimator steps.
@@ -11,7 +52,9 @@ class Pipeline:
     """
 
     def __init__(self, steps):
+        _validate_named_steps(steps)
         self.steps = steps
+        self.named_steps = {name: step for name, step in steps}
 
     def _fit_step(self, step, X, y=None):
         """
@@ -142,6 +185,22 @@ class Pipeline:
 
         return final_step.predict(X_current)
 
+    def get_step(self, name):
+        """
+        Retrieve a pipeline step by name.
+        """
+        if name not in self.named_steps:
+            raise KeyError(f"No step named '{name}' found in Pipeline.")
+
+        return self.named_steps[name]
+
+    def __repr__(self):
+        parts = ", ".join(
+            f"('{name}', {step.__class__.__name__})"
+            for name, step in self.steps
+        )
+        return f"Pipeline(steps=[{parts}])"
+
 
 class FeatureUnion:
     """
@@ -155,7 +214,26 @@ class FeatureUnion:
     """
 
     def __init__(self, transformer_list):
+        _validate_named_steps(transformer_list, name="transformer_list")
         self.transformer_list = transformer_list
+        self.named_transformers = {
+            name: transformer
+            for name, transformer in transformer_list
+        }
+
+    def fit(self, X, y=None):
+        """
+        Fit all transformers independently on the same input.
+        """
+        for name, transformer in self.transformer_list:
+            if not hasattr(transformer, "fit"):
+                raise AttributeError(
+                    f"Transformer '{name}' must implement fit()."
+                )
+
+            transformer.fit(X, y)
+
+        return self
 
     def partial_fit(self, X, y=None):
         """
@@ -179,20 +257,6 @@ class FeatureUnion:
 
         return self
 
-    def fit(self, X, y=None):
-        """
-        Fit all transformers independently on the same input.
-        """
-        for name, transformer in self.transformer_list:
-            if not hasattr(transformer, "fit"):
-                raise AttributeError(
-                    f"Transformer '{name}' must implement fit()."
-                )
-
-            transformer.fit(X, y)
-
-        return self
-
     def transform(self, X):
         """
         Transform input with each transformer and horizontally stack outputs.
@@ -205,7 +269,8 @@ class FeatureUnion:
                     f"Transformer '{name}' must implement transform()."
                 )
 
-            parts.append(transformer.transform(X))
+            part = transformer.transform(X)
+            parts.append(np.asarray(part))
 
         return np.hstack(parts)
 
@@ -217,7 +282,7 @@ class FeatureUnion:
 
         for name, transformer in self.transformer_list:
             if hasattr(transformer, "fit_transform"):
-                parts.append(transformer.fit_transform(X, y))
+                part = transformer.fit_transform(X, y)
             else:
                 if not hasattr(transformer, "fit") or not hasattr(transformer, "transform"):
                     raise AttributeError(
@@ -225,7 +290,9 @@ class FeatureUnion:
                     )
 
                 transformer.fit(X, y)
-                parts.append(transformer.transform(X))
+                part = transformer.transform(X)
+
+            parts.append(np.asarray(part))
 
         return np.hstack(parts)
 
@@ -233,11 +300,10 @@ class FeatureUnion:
         """
         Retrieve a transformer by name.
         """
-        for transformer_name, transformer in self.transformer_list:
-            if transformer_name == name:
-                return transformer
+        if name not in self.named_transformers:
+            raise KeyError(f"No transformer named '{name}' found in FeatureUnion.")
 
-        raise KeyError(f"No transformer named '{name}' found in FeatureUnion.")
+        return self.named_transformers[name]
 
     def __repr__(self):
         parts = ", ".join(

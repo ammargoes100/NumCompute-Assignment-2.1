@@ -219,3 +219,124 @@ def test_feature_union_partial_fit_updates_all_transformers():
 
     assert first.n_updates == 1
     assert second.n_updates == 1
+class NoTransform:
+    def fit(self, X, y=None):
+        return self
+
+
+class NoFitOrPartialFit:
+    def transform(self, X):
+        return X
+
+
+class NoPredict:
+    def fit(self, X, y=None):
+        return self
+def test_pipeline_rejects_empty_steps():
+    with pytest.raises(ValueError):
+        Pipeline([])
+
+
+def test_pipeline_rejects_duplicate_step_names():
+    with pytest.raises(ValueError):
+        Pipeline([
+            ("step", AddOne()),
+            ("step", Double()),
+        ])
+
+
+def test_pipeline_rejects_bad_step_format():
+    with pytest.raises(ValueError):
+        Pipeline([
+            ("add", AddOne(), "extra"),
+        ])
+
+
+def test_pipeline_rejects_none_step():
+    with pytest.raises(ValueError):
+        Pipeline([
+            ("bad", None),
+        ])
+
+
+def test_pipeline_get_step_returns_named_step():
+    add = AddOne()
+
+    pipe = Pipeline([
+        ("add", add),
+    ])
+
+    assert pipe.get_step("add") is add
+
+
+def test_pipeline_get_step_raises_for_unknown_name():
+    pipe = Pipeline([
+        ("add", AddOne()),
+    ])
+
+    with pytest.raises(KeyError):
+        pipe.get_step("missing")
+
+
+def test_pipeline_partial_fit_raises_if_intermediate_step_has_no_transform():
+    X = np.array([[1.0], [2.0]])
+    y = np.array([0, 1])
+
+    pipe = Pipeline([
+        ("bad", NoTransform()),
+        ("model", StreamingModel()),
+    ])
+
+    with pytest.raises(AttributeError):
+        pipe.partial_fit(X, y)
+
+
+def test_pipeline_partial_fit_raises_if_final_step_cannot_fit():
+    X = np.array([[1.0], [2.0]])
+    y = np.array([0, 1])
+
+    pipe = Pipeline([
+        ("add", AddOne()),
+        ("bad", object()),
+    ])
+
+    with pytest.raises(AttributeError):
+        pipe.partial_fit(X, y)
+
+
+def test_feature_union_rejects_empty_list():
+    with pytest.raises(ValueError):
+        FeatureUnion([])
+
+
+def test_feature_union_rejects_duplicate_names():
+    with pytest.raises(ValueError):
+        FeatureUnion([
+            ("x", AddOne()),
+            ("x", Double()),
+        ])
+
+
+def test_feature_union_get_transformer_raises_for_missing_name():
+    union = FeatureUnion([
+        ("add", AddOne()),
+    ])
+
+    with pytest.raises(KeyError):
+        union.get_transformer("missing")
+
+
+def test_pipeline_repr_contains_class_name():
+    pipe = Pipeline([
+        ("add", AddOne()),
+    ])
+
+    assert "Pipeline" in repr(pipe)
+
+
+def test_feature_union_repr_contains_class_name():
+    union = FeatureUnion([
+        ("add", AddOne()),
+    ])
+
+    assert "FeatureUnion" in repr(union)
