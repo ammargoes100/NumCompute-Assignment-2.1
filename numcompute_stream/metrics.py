@@ -211,3 +211,213 @@ def auc(x, y):
 
     order = np.argsort(x)
     return float(np.trapezoid(y[order], x[order]))
+class StreamingAccuracy:
+    """
+    Accumulate classification accuracy over multiple chunks.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def update(self, y_true, y_pred):
+        y_true, y_pred = _validate_same_shape(y_true, y_pred)
+
+        self.correct_ += int(np.sum(y_true == y_pred))
+        self.total_ += int(y_true.size)
+        return self
+
+    def result(self):
+        if self.total_ == 0:
+            return 0.0
+
+        return float(self.correct_ / self.total_)
+
+    def reset(self):
+        self.correct_ = 0
+        self.total_ = 0
+        return self
+
+
+class StreamingConfusionMatrix:
+    """
+    Accumulate a confusion matrix over multiple chunks.
+    """
+
+    def __init__(self, labels):
+        labels = np.asarray(labels)
+
+        if labels.size == 0:
+            raise ValueError("labels cannot be empty")
+
+        self.labels = labels
+        self.label_to_index = {label: index for index, label in enumerate(labels)}
+        self.reset()
+
+    def update(self, y_true, y_pred):
+        y_true, y_pred = _validate_same_shape(y_true, y_pred)
+
+        for true_label, pred_label in zip(y_true, y_pred):
+            if true_label not in self.label_to_index or pred_label not in self.label_to_index:
+                raise ValueError("unknown label found")
+
+            row = self.label_to_index[true_label]
+            col = self.label_to_index[pred_label]
+            self.matrix_[row, col] += 1
+
+        return self
+
+    def result(self):
+        return self.matrix_.copy()
+
+    def reset(self):
+        self.matrix_ = np.zeros((self.labels.size, self.labels.size), dtype=int)
+        return self
+
+
+class StreamingPrecision:
+    """
+    Accumulate precision over multiple classification chunks.
+    """
+
+    def __init__(self, average="binary", positive_label=1, labels=None):
+        self.average = average
+        self.positive_label = positive_label
+        self.labels = labels
+        self.y_true_parts_ = []
+        self.y_pred_parts_ = []
+
+    def update(self, y_true, y_pred):
+        y_true, y_pred = _validate_same_shape(y_true, y_pred)
+
+        self.y_true_parts_.append(y_true.copy())
+        self.y_pred_parts_.append(y_pred.copy())
+        return self
+
+    def result(self):
+        if len(self.y_true_parts_) == 0:
+            return 0.0
+
+        y_true = np.concatenate(self.y_true_parts_)
+        y_pred = np.concatenate(self.y_pred_parts_)
+
+        return precision(
+            y_true,
+            y_pred,
+            average=self.average,
+            positive_label=self.positive_label,
+        )
+
+    def reset(self):
+        self.y_true_parts_ = []
+        self.y_pred_parts_ = []
+        return self
+
+
+class StreamingRecall:
+    """
+    Accumulate recall over multiple classification chunks.
+    """
+
+    def __init__(self, average="binary", positive_label=1):
+        self.average = average
+        self.positive_label = positive_label
+        self.y_true_parts_ = []
+        self.y_pred_parts_ = []
+
+    def update(self, y_true, y_pred):
+        y_true, y_pred = _validate_same_shape(y_true, y_pred)
+
+        self.y_true_parts_.append(y_true.copy())
+        self.y_pred_parts_.append(y_pred.copy())
+        return self
+
+    def result(self):
+        if len(self.y_true_parts_) == 0:
+            return 0.0
+
+        y_true = np.concatenate(self.y_true_parts_)
+        y_pred = np.concatenate(self.y_pred_parts_)
+
+        return recall(
+            y_true,
+            y_pred,
+            average=self.average,
+            positive_label=self.positive_label,
+        )
+
+    def reset(self):
+        self.y_true_parts_ = []
+        self.y_pred_parts_ = []
+        return self
+
+
+class StreamingF1:
+    """
+    Accumulate F1 score over multiple classification chunks.
+    """
+
+    def __init__(self, average="binary", positive_label=1):
+        self.average = average
+        self.positive_label = positive_label
+        self.y_true_parts_ = []
+        self.y_pred_parts_ = []
+
+    def update(self, y_true, y_pred):
+        y_true, y_pred = _validate_same_shape(y_true, y_pred)
+
+        self.y_true_parts_.append(y_true.copy())
+        self.y_pred_parts_.append(y_pred.copy())
+        return self
+
+    def result(self):
+        if len(self.y_true_parts_) == 0:
+            return 0.0
+
+        y_true = np.concatenate(self.y_true_parts_)
+        y_pred = np.concatenate(self.y_pred_parts_)
+
+        return f1(
+            y_true,
+            y_pred,
+            average=self.average,
+            positive_label=self.positive_label,
+        )
+
+    def reset(self):
+        self.y_true_parts_ = []
+        self.y_pred_parts_ = []
+        return self
+
+
+class StreamingMSE:
+    """
+    Accumulate mean squared error over multiple chunks.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def update(self, y_true, y_pred):
+        y_true, y_pred = _validate_same_shape(y_true, y_pred)
+
+        if not np.issubdtype(y_true.dtype, np.number):
+            raise ValueError("y_true must be numeric")
+
+        if not np.issubdtype(y_pred.dtype, np.number):
+            raise ValueError("y_pred must be numeric")
+
+        errors = (y_true - y_pred) ** 2
+        self.sum_squared_error_ += float(np.sum(errors))
+        self.total_ += int(y_true.size)
+        return self
+
+    def result(self):
+        if self.total_ == 0:
+            return 0.0
+
+        return float(self.sum_squared_error_ / self.total_)
+
+    def reset(self):
+        self.sum_squared_error_ = 0.0
+        self.total_ = 0
+        return self

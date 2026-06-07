@@ -14,6 +14,12 @@ from numcompute_stream.metrics import (
     mse,
     roc_curve,
     auc,
+    StreamingAccuracy,
+    StreamingConfusionMatrix,
+    StreamingPrecision,
+    StreamingRecall,
+    StreamingF1,
+    StreamingMSE,
 )
 
 
@@ -178,3 +184,101 @@ def test_auc_basic():
     y = np.array([0.0, 1.0, 0.0])
 
     assert np.isclose(auc(x, y), 0.5)
+def test_streaming_accuracy_accumulates_chunks():
+    metric = StreamingAccuracy()
+
+    metric.update(np.array([1, 0, 1]), np.array([1, 0, 0]))
+    metric.update(np.array([1, 0]), np.array([1, 0]))
+
+    assert metric.result() == 0.8
+
+
+def test_streaming_accuracy_reset():
+    metric = StreamingAccuracy()
+    metric.update(np.array([1, 0]), np.array([1, 1]))
+
+    metric.reset()
+
+    assert metric.result() == 0.0
+
+
+def test_streaming_confusion_matrix_accumulates_chunks():
+    metric = StreamingConfusionMatrix(labels=[0, 1])
+
+    metric.update(np.array([0, 1]), np.array([0, 1]))
+    metric.update(np.array([1, 0]), np.array([0, 0]))
+
+    expected = np.array([
+        [2, 0],
+        [1, 1],
+    ])
+
+    assert np.array_equal(metric.result(), expected)
+
+
+def test_streaming_precision_matches_batch_precision():
+    y_true_1 = np.array([1, 0, 1])
+    y_pred_1 = np.array([1, 0, 0])
+    y_true_2 = np.array([1, 0])
+    y_pred_2 = np.array([1, 0])
+
+    metric = StreamingPrecision()
+    metric.update(y_true_1, y_pred_1)
+    metric.update(y_true_2, y_pred_2)
+
+    y_true_all = np.concatenate([y_true_1, y_true_2])
+    y_pred_all = np.concatenate([y_pred_1, y_pred_2])
+
+    assert metric.result() == precision(y_true_all, y_pred_all)
+
+
+def test_streaming_recall_matches_batch_recall():
+    y_true_1 = np.array([1, 0, 1])
+    y_pred_1 = np.array([1, 0, 0])
+    y_true_2 = np.array([1, 0])
+    y_pred_2 = np.array([1, 0])
+
+    metric = StreamingRecall()
+    metric.update(y_true_1, y_pred_1)
+    metric.update(y_true_2, y_pred_2)
+
+    y_true_all = np.concatenate([y_true_1, y_true_2])
+    y_pred_all = np.concatenate([y_pred_1, y_pred_2])
+
+    assert metric.result() == recall(y_true_all, y_pred_all)
+
+
+def test_streaming_f1_matches_batch_f1():
+    y_true_1 = np.array([1, 0, 1])
+    y_pred_1 = np.array([1, 0, 0])
+    y_true_2 = np.array([1, 0])
+    y_pred_2 = np.array([1, 0])
+
+    metric = StreamingF1()
+    metric.update(y_true_1, y_pred_1)
+    metric.update(y_true_2, y_pred_2)
+
+    y_true_all = np.concatenate([y_true_1, y_true_2])
+    y_pred_all = np.concatenate([y_pred_1, y_pred_2])
+
+    assert metric.result() == f1(y_true_all, y_pred_all)
+
+
+def test_streaming_mse_accumulates_chunks():
+    metric = StreamingMSE()
+
+    metric.update(np.array([1.0, 2.0]), np.array([1.0, 3.0]))
+    metric.update(np.array([4.0, 5.0]), np.array([6.0, 5.0]))
+
+    expected = (0.0 + 1.0 + 4.0 + 0.0) / 4
+
+    assert metric.result() == expected
+
+
+def test_streaming_mse_reset():
+    metric = StreamingMSE()
+    metric.update(np.array([1.0, 2.0]), np.array([2.0, 3.0]))
+
+    metric.reset()
+
+    assert metric.result() == 0.0
