@@ -122,3 +122,100 @@ def test_feature_union_get_transformer():
     ])
 
     assert union.get_transformer("add") is add
+class StreamingScaler:
+    def __init__(self):
+        self.n_updates = 0
+        self.mean_ = 0.0
+
+    def partial_fit(self, X, y=None):
+        self.n_updates += 1
+        self.mean_ = np.mean(X)
+        return self
+
+    def transform(self, X):
+        return X - self.mean_
+
+
+class StreamingModel:
+    def __init__(self):
+        self.n_updates = 0
+        self.last_shape = None
+
+    def partial_fit(self, X, y=None):
+        self.n_updates += 1
+        self.last_shape = X.shape
+        return self
+
+    def predict(self, X):
+        return np.ones(X.shape[0])
+def test_pipeline_partial_fit_updates_transformer_and_model():
+    X = np.array([[1.0], [2.0], [3.0]])
+    y = np.array([0, 1, 1])
+
+    scaler = StreamingScaler()
+    model = StreamingModel()
+
+    pipe = Pipeline([
+        ("scale", scaler),
+        ("model", model),
+    ])
+
+    pipe.partial_fit(X, y)
+
+    assert scaler.n_updates == 1
+    assert model.n_updates == 1
+    assert model.last_shape == X.shape
+
+
+def test_pipeline_partial_fit_can_be_called_multiple_times():
+    X1 = np.array([[1.0], [2.0]])
+    y1 = np.array([0, 1])
+
+    X2 = np.array([[3.0], [4.0]])
+    y2 = np.array([1, 1])
+
+    scaler = StreamingScaler()
+    model = StreamingModel()
+
+    pipe = Pipeline([
+        ("scale", scaler),
+        ("model", model),
+    ])
+
+    pipe.partial_fit(X1, y1)
+    pipe.partial_fit(X2, y2)
+
+    assert scaler.n_updates == 2
+    assert model.n_updates == 2
+
+
+def test_pipeline_partial_fit_predict_after_update():
+    X = np.array([[1.0], [2.0], [3.0]])
+    y = np.array([0, 1, 1])
+
+    pipe = Pipeline([
+        ("scale", StreamingScaler()),
+        ("model", StreamingModel()),
+    ])
+
+    pipe.partial_fit(X, y)
+    preds = pipe.predict(X)
+
+    np.testing.assert_array_equal(preds, np.ones(3))
+
+
+def test_feature_union_partial_fit_updates_all_transformers():
+    X = np.array([[1.0], [2.0]])
+
+    first = StreamingScaler()
+    second = StreamingScaler()
+
+    union = FeatureUnion([
+        ("first", first),
+        ("second", second),
+    ])
+
+    union.partial_fit(X)
+
+    assert first.n_updates == 1
+    assert second.n_updates == 1

@@ -1,15 +1,4 @@
-"""
-Pipeline utilities for NumCompute-Stream.
-
-This module builds on the lightweight Pipeline and FeatureUnion tools from the
-original NumCompute package. The batch fit, transform, fit_transform, and
-predict behaviour is retained because it is still useful for normal workflows
-and for transforming each incoming data chunk.
-"""
-
 import numpy as np
-
-
 class Pipeline:
     """
     Chain a sequence of transformer and estimator steps.
@@ -33,6 +22,21 @@ class Pipeline:
         except TypeError:
             return step.fit(X)
 
+    def _partial_fit_step(self, step, X, y=None):
+        """
+        Call partial_fit when available, otherwise fall back to fit.
+        """
+        if hasattr(step, "partial_fit"):
+            try:
+                return step.partial_fit(X, y)
+            except TypeError:
+                return step.partial_fit(X)
+
+        if hasattr(step, "fit"):
+            return self._fit_step(step, X, y)
+
+        return step
+
     def fit(self, X, y=None):
         """
         Fit all steps sequentially, passing transformed data between steps.
@@ -49,6 +53,37 @@ class Pipeline:
                         f"Intermediate step '{name}' must implement transform()."
                     )
 
+                X_current = step.transform(X_current)
+
+        return self
+
+    def partial_fit(self, X, y=None):
+        """
+        Incrementally update the pipeline on one incoming data chunk.
+
+        Intermediate steps are updated first, then used to transform the chunk.
+        The final step is then updated using the transformed chunk.
+        """
+        X_current = X
+
+        for index, (name, step) in enumerate(self.steps):
+            is_final_step = index == len(self.steps) - 1
+
+            if is_final_step:
+                if not hasattr(step, "partial_fit") and not hasattr(step, "fit"):
+                    raise AttributeError(
+                        f"Final step '{name}' must implement partial_fit() or fit()."
+                    )
+
+                self._partial_fit_step(step, X_current, y)
+
+            else:
+                if not hasattr(step, "transform"):
+                    raise AttributeError(
+                        f"Intermediate step '{name}' must implement transform()."
+                    )
+
+                self._partial_fit_step(step, X_current, y)
                 X_current = step.transform(X_current)
 
         return self
@@ -121,6 +156,28 @@ class FeatureUnion:
 
     def __init__(self, transformer_list):
         self.transformer_list = transformer_list
+
+    def partial_fit(self, X, y=None):
+        """
+        Incrementally update each transformer when partial_fit is available.
+
+        If a transformer does not implement partial_fit(), fit() is used as a
+        fallback.
+        """
+        for name, transformer in self.transformer_list:
+            if hasattr(transformer, "partial_fit"):
+                try:
+                    transformer.partial_fit(X, y)
+                except TypeError:
+                    transformer.partial_fit(X)
+            elif hasattr(transformer, "fit"):
+                transformer.fit(X, y)
+            else:
+                raise AttributeError(
+                    f"Transformer '{name}' must implement partial_fit() or fit()."
+                )
+
+        return self
 
     def fit(self, X, y=None):
         """
