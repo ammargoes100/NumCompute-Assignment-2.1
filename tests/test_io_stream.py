@@ -196,3 +196,62 @@ def test_load_csv_xy_chunked_yields_feature_target_pairs(large_csv):
 
     assert X_first.shape == (60, 1)
     assert y_first.shape == (60,)
+def test_load_csv_rejects_non_string_path():
+    with pytest.raises(TypeError):
+        load_csv(123)
+
+
+def test_load_csv_rejects_empty_path():
+    with pytest.raises(ValueError):
+        load_csv("")
+
+
+def test_load_csv_rejects_missing_file():
+    with pytest.raises(FileNotFoundError):
+        load_csv("missing_file.csv")
+
+
+def test_load_csv_rejects_empty_delimiter(numeric_csv):
+    with pytest.raises(ValueError):
+        load_csv(numeric_csv, delimiter="")
+
+
+def test_load_csv_chunked_rejects_invalid_chunk_size(numeric_csv):
+    with pytest.raises(ValueError):
+        list(load_csv_chunked(numeric_csv, chunk_size=0))
+
+
+def test_split_features_target_rejects_1d_array():
+    data = np.array([1.0, 2.0, 3.0])
+
+    with pytest.raises(ValueError):
+        split_features_target(data)
+
+
+def test_split_features_target_rejects_single_column():
+    data = np.array([[1.0], [2.0]])
+
+    with pytest.raises(ValueError):
+        split_features_target(data)
+
+
+def test_split_features_target_rejects_bad_target_col():
+    data = np.array([
+        [1.0, 2.0],
+        [3.0, 4.0],
+    ])
+
+    with pytest.raises(IndexError):
+        split_features_target(data, target_col=3)
+
+
+def test_load_csv_chunked_empty_file_yields_no_chunks(empty_csv):
+    chunks = list(load_csv_chunked(empty_csv, chunk_size=10, skip_header=False))
+
+    assert chunks == []
+
+
+def test_read_csv_header_empty_file_returns_none(empty_csv):
+    header = read_csv_header(empty_csv)
+
+    assert header is None

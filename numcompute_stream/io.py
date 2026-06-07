@@ -13,6 +13,26 @@ import numpy as np
 MISSING_VALUE_MARKERS = ["", "na", "n/a", "null", "none", "nan", "?", "missing"]
 DEFAULT_FILL_VALUE = np.nan
 
+def _validate_file_path(file_path):
+    """
+    Validate a CSV file path before reading.
+    """
+    if not isinstance(file_path, str):
+        raise TypeError(f"file_path must be a string, got {type(file_path).__name__}")
+
+    if not file_path.strip():
+        raise ValueError("file_path cannot be empty")
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"file not found: {file_path}")
+
+
+def _validate_delimiter(delimiter):
+    """
+    Validate the delimiter used for CSV parsing.
+    """
+    if not isinstance(delimiter, str) or delimiter == "":
+        raise ValueError("delimiter must be a non-empty string")
 
 def load_csv(file_path, delimiter=",", fill_value=DEFAULT_FILL_VALUE, skip_header=True):
     """
@@ -119,11 +139,15 @@ def load_csv_chunked(
     Each yielded chunk is a 2D float64 NumPy array. This is useful when the
     full file should not be loaded at once or when simulating a stream of data.
     """
-    if not isinstance(file_path, str):
-        raise TypeError(f"file_path must be a string, got {type(file_path).__name__}")
+    _validate_file_path(file_path)
+    _validate_delimiter(delimiter)
 
     if not isinstance(chunk_size, int) or chunk_size < 1:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+    if not isinstance(chunk_size, int) or chunk_size < 1:
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+    if os.path.getsize(file_path) == 0:
+        return
 
     with open(file_path, encoding="utf-8") as file:
         if skip_header:
@@ -176,9 +200,8 @@ def read_csv_header(file_path, delimiter=","):
     This is useful when chunked reading is used but column names are still
     needed separately.
     """
-    if not isinstance(file_path, str):
-        raise TypeError(f"file_path must be a string, got {type(file_path).__name__}")
-
+    _validate_file_path(file_path)
+    _validate_delimiter(delimiter)
     with open(file_path, encoding="utf-8") as file:
         first_line = file.readline().strip()
 
