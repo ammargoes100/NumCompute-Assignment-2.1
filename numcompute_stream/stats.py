@@ -5,10 +5,11 @@ This module builds on the statistics helpers from the original NumCompute
 package. The batch functions are retained because they are useful for analysing
 complete datasets and individual incoming chunks.
 
-The original WelfordStats class is also retained as a lightweight scalar
-running-statistics helper.
+Streaming statistics are added so feature-wise mean and variance can be updated
+as new chunks arrive.
 """
 
+import numbers
 import numpy as np
 
 
@@ -82,7 +83,7 @@ def histogram(data, n_bins=10):
     """
     _validate_array(data)
 
-    if not isinstance(n_bins, int) or n_bins < 1:
+    if not isinstance(n_bins, int) or isinstance(n_bins, bool) or n_bins < 1:
         raise ValueError(f"n_bins must be a positive integer, got {n_bins}")
 
     valid_data = data.flatten()
@@ -125,6 +126,9 @@ class WelfordStats:
 
         NaN values are ignored.
         """
+        if not isinstance(new_value, numbers.Real):
+            raise TypeError("new_value must be numeric")
+
         if np.isnan(new_value):
             return self
 
@@ -173,6 +177,8 @@ class WelfordStats:
         self._M2 = 0.0
 
         return self
+
+
 class StreamingStats:
     """
     Track feature-wise running mean and variance over data chunks.
@@ -214,7 +220,6 @@ class StreamingStats:
         chunk_mean = np.nanmean(X_chunk, axis=0)
         chunk_var = np.nanvar(X_chunk, axis=0)
 
-        # If a feature is all NaN in this chunk, keep its current stats.
         all_nan = np.isnan(chunk_mean)
 
         if self.n_samples_seen_ == 0:
@@ -223,7 +228,7 @@ class StreamingStats:
 
             self.mean_ = chunk_mean
             self.var_ = chunk_var
-            self.n_samples_seen_ = chunk_count
+            self.n_samples_seen_ = int(chunk_count)
             return self
 
         old_count = self.n_samples_seen_

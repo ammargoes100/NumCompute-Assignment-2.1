@@ -163,3 +163,61 @@ def test_streaming_stats_empty_chunk_raises():
 
     with pytest.raises(ValueError):
         tracker.update_stats(np.empty((0, 2)))
+def test_validate_array_rejects_non_numpy_input():
+    with pytest.raises(TypeError):
+        mean([1, 2, 3])
+
+
+def test_validate_array_rejects_empty_array():
+    with pytest.raises(ValueError):
+        mean(np.array([]))
+
+
+def test_histogram_rejects_invalid_bin_count():
+    with pytest.raises(ValueError):
+        histogram(np.array([1, 2, 3]), n_bins=0)
+
+
+def test_histogram_rejects_bool_bin_count():
+    with pytest.raises(ValueError):
+        histogram(np.array([1, 2, 3]), n_bins=True)
+
+
+def test_quantile_rejects_low_q():
+    with pytest.raises(ValueError):
+        quantile(np.array([1, 2, 3]), -0.1)
+
+
+def test_quantile_rejects_high_q():
+    with pytest.raises(ValueError):
+        quantile(np.array([1, 2, 3]), 1.1)
+
+
+def test_welford_rejects_non_numeric_value():
+    tracker = WelfordStats()
+
+    with pytest.raises(TypeError):
+        tracker.update("bad")
+
+
+def test_welford_single_value_variance_zero():
+    tracker = WelfordStats()
+    tracker.update(5.0)
+
+    assert tracker.variance() == 0.0
+
+
+def test_streaming_stats_rejects_3d_chunk():
+    tracker = StreamingStats()
+
+    with pytest.raises(ValueError):
+        tracker.update_stats(np.ones((2, 2, 2)))
+
+
+def test_streaming_stats_handles_nan_chunk():
+    tracker = StreamingStats()
+
+    tracker.update_stats(np.array([[np.nan, np.nan], [np.nan, np.nan]]))
+
+    assert np.allclose(tracker.mean(), [0.0, 0.0])
+    assert np.allclose(tracker.variance(), [0.0, 0.0])
