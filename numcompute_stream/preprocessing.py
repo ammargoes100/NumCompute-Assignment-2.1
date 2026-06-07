@@ -5,6 +5,9 @@ This module builds on the preprocessing transformers from the original
 NumCompute package. The batch versions of StandardScaler, MinMaxScaler,
 OneHotEncoder, and SimpleImputer are retained because they are still useful for
 normal preprocessing and for transforming individual data chunks.
+
+Streaming support is added through partial_fit(), allowing preprocessing state
+to be updated one chunk at a time.
 """
 
 import warnings
@@ -47,10 +50,6 @@ def _check_is_fitted(value, name):
 class StandardScaler:
     """
     Standardise features using z-score scaling.
-
-    Each feature is transformed as:
-
-        (X - mean) / standard_deviation
     """
 
     def __init__(self, with_mean=True, with_std=True):
@@ -60,18 +59,60 @@ class StandardScaler:
         self.var_ = None
         self.scale_ = None
         self.n_features_in_ = None
+        self.n_samples_seen_ = 0
 
     def fit(self, X):
         """
         Fit the scaler on a full batch of data.
         """
+        self.n_samples_seen_ = 0
+        self.mean_ = None
+        self.var_ = None
+        self.scale_ = None
+        self.n_features_in_ = None
+        return self.partial_fit(X)
+
+    def partial_fit(self, X, y=None):
+        """
+        Update running mean and variance using one data chunk.
+        """
         X = _ensure_2d(X).astype(float)
-        _check_non_empty(X, "fit")
+        _check_non_empty(X, "partial_fit")
 
-        self.n_features_in_ = X.shape[1]
+        if self.n_features_in_ is None:
+            self.n_features_in_ = X.shape[1]
+            self.n_samples_seen_ = 0
+            self.mean_ = np.zeros(X.shape[1], dtype=float)
+            self.var_ = np.zeros(X.shape[1], dtype=float)
 
-        self.mean_ = np.mean(X, axis=0) if self.with_mean else None
-        self.var_ = np.var(X, axis=0) if self.with_std else None
+        if X.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"Expected {self.n_features_in_} features, got {X.shape[1]}."
+            )
+
+        chunk_count = X.shape[0]
+        chunk_mean = np.mean(X, axis=0)
+        chunk_var = np.var(X, axis=0)
+
+        if self.n_samples_seen_ == 0:
+            new_mean = chunk_mean
+            new_var = chunk_var
+            new_count = chunk_count
+        else:
+            old_count = self.n_samples_seen_
+            new_count = old_count + chunk_count
+            delta = chunk_mean - self.mean_
+
+            new_mean = self.mean_ + delta * chunk_count / new_count
+            new_var = (
+                old_count * self.var_
+                + chunk_count * chunk_var
+                + (delta ** 2) * old_count * chunk_count / new_count
+            ) / new_count
+
+        self.n_samples_seen_ = int(new_count)
+        self.mean_ = new_mean if self.with_mean else None
+        self.var_ = new_var if self.with_std else None
 
         if self.with_std:
             self.scale_ = np.sqrt(self.var_)
@@ -125,17 +166,40 @@ class MinMaxScaler:
         self.data_min_ = None
         self.data_max_ = None
         self.n_features_in_ = None
+        self.n_samples_seen_ = 0
 
     def fit(self, X):
         """
         Fit the scaler on a full batch of data.
         """
-        X = _ensure_2d(X).astype(float)
-        _check_non_empty(X, "fit")
+        self.scale_ = None
+        self.data_min_ = None
+        self.data_max_ = None
+        self.n_features_in_ = None
+        self.n_samples_seen_ = 0
+        return self.partial_fit(X)
 
-        self.n_features_in_ = X.shape[1]
-        self.data_min_ = np.min(X, axis=0)
-        self.data_max_ = np.max(X, axis=0)
+    def partial_fit(self, X, y=None):
+        """
+        Update running feature minimum and maximum using one data chunk.
+        """
+        X = _ensure_2d(X).astype(float)
+        _check_non_empty(X, "partial_fit")
+
+        if self.n_features_in_ is None:
+            self.n_features_in_ = X.shape[1]
+            self.data_min_ = np.min(X, axis=0)
+            self.data_max_ = np.max(X, axis=0)
+        else:
+            if X.shape[1] != self.n_features_in_:
+                raise ValueError(
+                    f"Expected {self.n_features_in_} features, got {X.shape[1]}."
+                )
+
+            self.data_min_ = np.minimum(self.data_min_, np.min(X, axis=0))
+            self.data_max_ = np.maximum(self.data_max_, np.max(X, axis=0))
+
+        self.n_samples_seen_ += int(X.shape[0])
 
         range_min, range_max = self.feature_range
         data_range = self.data_max_ - self.data_min_
@@ -194,14 +258,34 @@ class OneHotEncoder:
         """
         Fit categories from a full batch of data.
         """
+        self.categories_ = None
+        self.n_features_in_ = None
+        self.n_categories_ = None
+        return self.partial_fit(X)
+
+    def partial_fit(self, X, y=None):
+        """
+        Update known categories using one data chunk.
+        """
         X = _ensure_2d(X)
-        _check_non_empty(X, "fit")
+        _check_non_empty(X, "partial_fit")
         self._check_nan(X)
 
-        self.n_features_in_ = X.shape[1]
-        self.categories_ = [np.unique(X[:, i]) for i in range(X.shape[1])]
-        self.n_categories_ = [len(categories) for categories in self.categories_]
+        if self.n_features_in_ is None:
+            self.n_features_in_ = X.shape[1]
+            self.categories_ = [np.unique(X[:, i]) for i in range(X.shape[1])]
+        else:
+            if X.shape[1] != self.n_features_in_:
+                raise ValueError(
+                    f"Expected {self.n_features_in_} features, got {X.shape[1]}"
+                )
 
+            for i in range(X.shape[1]):
+                self.categories_[i] = np.unique(
+                    np.concatenate([self.categories_[i], np.unique(X[:, i])])
+                )
+
+        self.n_categories_ = [len(categories) for categories in self.categories_]
         return self
 
     def transform(self, X):
@@ -262,37 +346,71 @@ class SimpleImputer:
         self.fill_value = fill_value
         self.statistics_ = None
         self.n_features_in_ = None
+        self.n_samples_seen_ = 0
+        self._sum_ = None
+        self._count_ = None
+        self._stored_chunks_ = []
 
     def fit(self, X):
         """
         Fit imputation values from a full batch of data.
         """
-        X = _ensure_2d(X).astype(float)
-        _check_non_empty(X, "fit")
+        self.statistics_ = None
+        self.n_features_in_ = None
+        self.n_samples_seen_ = 0
+        self._sum_ = None
+        self._count_ = None
+        self._stored_chunks_ = []
+        return self.partial_fit(X)
 
-        self.n_features_in_ = X.shape[1]
+    def partial_fit(self, X, y=None):
+        """
+        Update imputation statistics using one data chunk.
+        """
+        X = _ensure_2d(X).astype(float)
+        _check_non_empty(X, "partial_fit")
+
+        if self.n_features_in_ is None:
+            self.n_features_in_ = X.shape[1]
+
+        if X.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"Expected {self.n_features_in_} features, got {X.shape[1]}"
+            )
+
+        self.n_samples_seen_ += int(X.shape[0])
 
         if self.strategy == "constant":
             self.statistics_ = np.full(self.n_features_in_, self.fill_value)
 
         elif self.strategy == "mean":
-            non_nan_count = np.count_nonzero(~np.isnan(X), axis=0)
-            col_sum = np.nansum(X, axis=0)
+            chunk_sum = np.nansum(X, axis=0)
+            chunk_count = np.count_nonzero(~np.isnan(X), axis=0)
+
+            if self._sum_ is None:
+                self._sum_ = np.zeros(self.n_features_in_, dtype=float)
+                self._count_ = np.zeros(self.n_features_in_, dtype=int)
+
+            self._sum_ += chunk_sum
+            self._count_ += chunk_count
+
             self.statistics_ = np.divide(
-                col_sum,
-                non_nan_count,
-                out=np.zeros_like(col_sum, dtype=float),
-                where=non_nan_count != 0,
+                self._sum_,
+                self._count_,
+                out=np.zeros_like(self._sum_, dtype=float),
+                where=self._count_ != 0,
             )
 
         elif self.strategy == "median":
-            self.statistics_ = np.zeros(X.shape[1])
+            self._stored_chunks_.append(X.copy())
+            all_data = np.vstack(self._stored_chunks_)
+            self.statistics_ = np.zeros(self.n_features_in_, dtype=float)
 
-            for i in range(X.shape[1]):
-                col = X[:, i]
+            for i in range(self.n_features_in_):
+                col = all_data[:, i]
 
                 if np.all(np.isnan(col)):
-                    self.statistics_[i] = 0
+                    self.statistics_[i] = 0.0
                 else:
                     self.statistics_[i] = np.nanmedian(col)
 

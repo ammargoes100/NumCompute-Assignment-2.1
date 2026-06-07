@@ -282,3 +282,71 @@ class TestSimpleImputer:
         X_imp = imputer.transform(X)
 
         assert np.array_equal(X_imp, X)
+class TestStreamingPreprocessing:
+    def test_standard_scaler_partial_fit_matches_full_fit(self):
+        X1 = np.array([[1.0, 2.0], [3.0, 4.0]])
+        X2 = np.array([[5.0, 6.0], [7.0, 8.0]])
+        X_all = np.vstack([X1, X2])
+
+        stream_scaler = StandardScaler()
+        stream_scaler.partial_fit(X1)
+        stream_scaler.partial_fit(X2)
+
+        batch_scaler = StandardScaler().fit(X_all)
+
+        assert np.allclose(stream_scaler.mean_, batch_scaler.mean_)
+        assert np.allclose(stream_scaler.scale_, batch_scaler.scale_)
+        assert stream_scaler.n_samples_seen_ == 4
+
+    def test_minmax_scaler_partial_fit_updates_range(self):
+        X1 = np.array([[2.0, 10.0], [4.0, 20.0]])
+        X2 = np.array([[0.0, 30.0], [8.0, 5.0]])
+
+        scaler = MinMaxScaler()
+        scaler.partial_fit(X1)
+        scaler.partial_fit(X2)
+
+        assert np.allclose(scaler.data_min_, [0.0, 5.0])
+        assert np.allclose(scaler.data_max_, [8.0, 30.0])
+        assert scaler.n_samples_seen_ == 4
+
+    def test_one_hot_encoder_partial_fit_adds_new_categories(self):
+        enc = OneHotEncoder()
+
+        enc.partial_fit(np.array(["red", "blue"]))
+        enc.partial_fit(np.array(["green"]))
+
+        assert set(enc.categories_[0].tolist()) == {"red", "blue", "green"}
+
+        X_enc = enc.transform(np.array(["green", "red"]))
+
+        assert X_enc.shape == (2, 3)
+        assert (X_enc.sum(axis=1) == 1).all()
+
+    def test_simple_imputer_mean_partial_fit_updates_statistics(self):
+        X1 = np.array([[1.0, np.nan], [3.0, 4.0]])
+        X2 = np.array([[5.0, 6.0]])
+
+        imputer = SimpleImputer(strategy="mean")
+        imputer.partial_fit(X1)
+        imputer.partial_fit(X2)
+
+        assert np.allclose(imputer.statistics_, [3.0, 5.0])
+        assert imputer.n_samples_seen_ == 3
+
+    def test_simple_imputer_median_partial_fit_updates_statistics(self):
+        X1 = np.array([[1.0, np.nan], [5.0, 4.0]])
+        X2 = np.array([[9.0, 8.0]])
+
+        imputer = SimpleImputer(strategy="median")
+        imputer.partial_fit(X1)
+        imputer.partial_fit(X2)
+
+        assert np.allclose(imputer.statistics_, [5.0, 6.0])
+
+    def test_partial_fit_feature_mismatch_raises(self):
+        scaler = StandardScaler()
+        scaler.partial_fit(np.array([[1.0, 2.0]]))
+
+        with pytest.raises(ValueError):
+            scaler.partial_fit(np.array([[1.0, 2.0, 3.0]]))
