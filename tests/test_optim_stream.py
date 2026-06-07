@@ -77,3 +77,73 @@ def test_jacobian_output_shape():
     result = jacobian(F, x)
 
     assert result.shape == (2, 3)
+def test_grad_rejects_non_positive_step_size():
+    f = lambda x: np.sum(x ** 2)
+    x = np.array([1.0, 2.0])
+
+    with pytest.raises(ValueError):
+        grad(f, x, h=0.0)
+
+
+def test_grad_rejects_empty_x():
+    f = lambda x: np.sum(x ** 2)
+
+    with pytest.raises(ValueError):
+        grad(f, np.array([]))
+
+
+def test_grad_rejects_non_1d_x():
+    f = lambda x: np.sum(x ** 2)
+
+    with pytest.raises(ValueError):
+        grad(f, np.array([[1.0, 2.0]]))
+
+
+def test_grad_rejects_vector_output_function():
+    f = lambda x: np.array([x[0], x[0] ** 2])
+    x = np.array([1.0])
+
+    with pytest.raises(ValueError):
+        grad(f, x)
+
+
+def test_jacobian_rejects_non_positive_step_size():
+    F = lambda x: np.array([x[0] ** 2])
+    x = np.array([1.0])
+
+    with pytest.raises(ValueError):
+        jacobian(F, x, h=-1e-5)
+
+
+def test_jacobian_rejects_empty_x():
+    F = lambda x: np.array([1.0])
+
+    with pytest.raises(ValueError):
+        jacobian(F, np.array([]))
+
+
+def test_jacobian_rejects_non_1d_x():
+    F = lambda x: np.array([x[0, 0]])
+
+    with pytest.raises(ValueError):
+        jacobian(F, np.array([[1.0, 2.0]]))
+
+
+def test_jacobian_rejects_scalar_output():
+    F = lambda x: x[0] ** 2
+    x = np.array([1.0])
+
+    with pytest.raises(ValueError):
+        jacobian(F, x)
+
+
+def test_jacobian_rejects_changing_output_shape():
+    def F(x):
+        if x[0] > 1.0:
+            return np.array([x[0], x[0] ** 2])
+        return np.array([x[0]])
+
+    x = np.array([1.0])
+
+    with pytest.raises(ValueError):
+        jacobian(F, x, method="forward")
