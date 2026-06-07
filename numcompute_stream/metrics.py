@@ -421,3 +421,38 @@ class StreamingMSE:
         self.sum_squared_error_ = 0.0
         self.total_ = 0
         return self
+class RollingAccuracy:
+    """
+    Track accuracy over a fixed number of recent predictions.
+
+    This is useful when recent performance matters more than total cumulative
+    performance.
+    """
+
+    def __init__(self, window_size=100):
+        if not isinstance(window_size, int) or window_size <= 0:
+            raise ValueError("window_size must be a positive integer")
+
+        self.window_size = window_size
+        self.reset()
+
+    def update(self, y_true, y_pred):
+        y_true, y_pred = _validate_same_shape(y_true, y_pred)
+
+        correct_values = (y_true == y_pred).astype(int).tolist()
+        self.values_.extend(correct_values)
+
+        if len(self.values_) > self.window_size:
+            self.values_ = self.values_[-self.window_size:]
+
+        return self
+
+    def result(self):
+        if len(self.values_) == 0:
+            return 0.0
+
+        return float(np.mean(self.values_))
+
+    def reset(self):
+        self.values_ = []
+        return self

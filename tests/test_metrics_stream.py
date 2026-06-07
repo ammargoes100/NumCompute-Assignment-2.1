@@ -20,6 +20,7 @@ from numcompute_stream.metrics import (
     StreamingRecall,
     StreamingF1,
     StreamingMSE,
+    RollingAccuracy
 )
 
 
@@ -278,6 +279,76 @@ def test_streaming_mse_accumulates_chunks():
 def test_streaming_mse_reset():
     metric = StreamingMSE()
     metric.update(np.array([1.0, 2.0]), np.array([2.0, 3.0]))
+
+    metric.reset()
+
+    assert metric.result() == 0.0
+def test_precision_invalid_average_raises():
+    with pytest.raises(ValueError):
+        precision(np.array([1, 0]), np.array([1, 0]), average="weighted")
+
+
+def test_recall_invalid_average_raises():
+    with pytest.raises(ValueError):
+        recall(np.array([1, 0]), np.array([1, 0]), average="weighted")
+
+
+def test_f1_invalid_average_raises():
+    with pytest.raises(ValueError):
+        f1(np.array([1, 0]), np.array([1, 0]), average="weighted")
+
+
+def test_confusion_matrix_unknown_label_raises():
+    y_true = np.array([0, 1])
+    y_pred = np.array([0, 2])
+
+    with pytest.raises(ValueError):
+        confusion_matrix(y_true, y_pred, labels=[0, 1])
+
+
+def test_auc_requires_matching_shapes():
+    with pytest.raises(ValueError):
+        auc(np.array([0.0, 1.0]), np.array([0.0]))
+
+
+def test_auc_requires_at_least_two_points():
+    with pytest.raises(ValueError):
+        auc(np.array([0.0]), np.array([1.0]))
+
+
+def test_streaming_confusion_matrix_unknown_label_raises():
+    metric = StreamingConfusionMatrix(labels=[0, 1])
+
+    with pytest.raises(ValueError):
+        metric.update(np.array([0, 1]), np.array([0, 2]))
+
+
+def test_streaming_accuracy_shape_mismatch_raises():
+    metric = StreamingAccuracy()
+
+    with pytest.raises(ValueError):
+        metric.update(np.array([1, 0]), np.array([1]))
+
+
+def test_rolling_accuracy_uses_recent_window():
+    metric = RollingAccuracy(window_size=3)
+
+    metric.update(np.array([1, 1, 1]), np.array([1, 0, 0]))
+    metric.update(np.array([0, 0]), np.array([0, 0]))
+
+    # Correct values over time: [1, 0, 0, 1, 1]
+    # Last three values: [0, 1, 1]
+    assert np.isclose(metric.result(), 2 / 3)
+
+
+def test_rolling_accuracy_rejects_invalid_window():
+    with pytest.raises(ValueError):
+        RollingAccuracy(window_size=0)
+
+
+def test_rolling_accuracy_reset():
+    metric = RollingAccuracy(window_size=3)
+    metric.update(np.array([1, 0]), np.array([1, 1]))
 
     metric.reset()
 
