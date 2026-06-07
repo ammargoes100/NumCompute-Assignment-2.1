@@ -188,3 +188,98 @@ def test_binary_search_found():
 
     assert index == 2
     assert exists is True
+def test_multikey_sort_non_integer_key_raises():
+    array = np.array([[1, 2], [3, 4]])
+
+    with pytest.raises(ValueError):
+        multikey_sort(array, ["0"])
+
+
+def test_topk_rejects_non_integer_k():
+    with pytest.raises(ValueError):
+        topk(np.array([1, 2, 3]), 1.5)
+
+
+def test_topk_rejects_bool_k():
+    with pytest.raises(ValueError):
+        topk(np.array([1, 2, 3]), True)
+
+
+def test_topk_rejects_2d_array():
+    with pytest.raises(ValueError):
+        topk(np.array([[1, 2], [3, 4]]), 1)
+
+
+def test_topk_unsorted_output_has_correct_values():
+    array = np.array([4, 1, 9, 7, 3])
+
+    result = topk(array, 2, largest=True, return_indices=False, sorted=False)
+
+    assert set(result.tolist()) == {9, 7}
+
+
+def test_quickselect_rejects_2d_array():
+    with pytest.raises(ValueError):
+        quickselect(np.array([[1, 2], [3, 4]]), 1)
+
+
+def test_quickselect_rejects_empty_array():
+    with pytest.raises(ValueError):
+        quickselect(np.array([]), 0)
+
+
+def test_quickselect_rejects_non_integer_k():
+    with pytest.raises(ValueError):
+        quickselect(np.array([1, 2, 3]), 1.5)
+
+
+def test_quickselect_rejects_bool_k():
+    with pytest.raises(ValueError):
+        quickselect(np.array([1, 2, 3]), True)
+
+
+def test_quickselect_rejects_k_out_of_range():
+    with pytest.raises(ValueError):
+        quickselect(np.array([1, 2, 3]), 3)
+
+
+def test_quickselect_with_duplicates():
+    array = np.array([6, 3, 8, 1, 6])
+
+    result = quickselect(array, 2)
+
+    assert result == 6
+
+
+def test_binary_search_not_found_returns_insertion_point():
+    index, exists = binary_search(np.array([1, 3, 5, 7]), 4)
+
+    assert index == 2
+    assert exists is False
+
+
+def test_binary_search_empty_array():
+    index, exists = binary_search(np.array([]), 10)
+
+    assert index == 0
+    assert exists is False
+
+
+def test_binary_search_rejects_2d_array():
+    with pytest.raises(ValueError):
+        binary_search(np.array([[1, 2], [3, 4]]), 2)
+
+
+def test_stable_sort_axis_zero():
+    array = np.array([
+        [3, 2],
+        [1, 4],
+    ])
+
+    result = stable_sort(array, axis=0)
+    expected = np.array([
+        [1, 2],
+        [3, 4],
+    ])
+
+    assert np.array_equal(result, expected)

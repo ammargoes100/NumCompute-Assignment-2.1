@@ -4,9 +4,27 @@ Sorting and searching utilities for NumCompute-Stream.
 This module keeps the sorting, top-k, quickselect, and binary search helpers
 from the original NumCompute package. They are retained because they are useful
 general numerical utilities for array manipulation and analysis.
+
+Example print statements from the original file are intentionally removed so
+the module can be imported without producing unwanted output.
 """
 
 import numpy as np
+
+
+def _as_1d_array(values, function_name):
+    """
+    Convert input to a non-empty 1D array.
+    """
+    values = np.asarray(values)
+
+    if values.ndim != 1:
+        raise ValueError(f"{function_name} expects a 1D array")
+
+    if values.size == 0:
+        raise ValueError(f"{function_name} cannot operate on an empty array")
+
+    return values
 
 
 def stable_sort(array, axis=-1):
@@ -94,15 +112,9 @@ def topk(values, k, largest=True, return_indices=True, sorted=True):
     np.ndarray or tuple
         Selected values, and optionally their original indices.
     """
-    values = np.asarray(values)
+    values = _as_1d_array(values, "topk")
 
-    if values.ndim != 1:
-        raise ValueError("topk expects a 1D array")
-
-    if values.size == 0:
-        raise ValueError("topk cannot operate on an empty array")
-
-    if not isinstance(k, (int, np.integer)):
+    if not isinstance(k, (int, np.integer)) or isinstance(k, bool):
         raise ValueError("k must be an integer")
 
     if k < 1 or k > values.size:
@@ -149,15 +161,9 @@ def quickselect(array, k):
     scalar
         The k-th smallest value.
     """
-    array = np.asarray(array)
+    array = _as_1d_array(array, "quickselect")
 
-    if array.ndim != 1:
-        raise ValueError("quickselect expects a 1D array")
-
-    if array.size == 0:
-        raise ValueError("quickselect cannot operate on an empty array")
-
-    if not isinstance(k, (int, np.integer)):
+    if not isinstance(k, (int, np.integer)) or isinstance(k, bool):
         raise ValueError("k must be an integer")
 
     if k < 0 or k >= array.size:
