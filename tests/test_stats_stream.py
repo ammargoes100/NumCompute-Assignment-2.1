@@ -14,6 +14,7 @@ from numcompute_stream.stats import (
     histogram,
     quantile,
     WelfordStats,
+    StreamingStats,
 )
 
 
@@ -115,3 +116,50 @@ def test_welford_stats():
 
     with pytest.raises(ValueError):
         tracker.mean()
+def test_streaming_stats_matches_batch_mean_and_variance():
+    X1 = np.array([[1.0, 2.0], [3.0, 4.0]])
+    X2 = np.array([[5.0, 6.0], [7.0, 8.0]])
+    X_all = np.vstack([X1, X2])
+
+    tracker = StreamingStats()
+    tracker.update_stats(X1)
+    tracker.update_stats(X2)
+
+    assert np.allclose(tracker.mean(), np.mean(X_all, axis=0))
+    assert np.allclose(tracker.variance(), np.var(X_all, axis=0))
+    assert tracker.n_samples_seen_ == 4
+
+
+def test_streaming_stats_accepts_1d_input():
+    tracker = StreamingStats()
+    tracker.update_stats(np.array([1.0, 2.0, 3.0]))
+
+    assert tracker.mean().shape == (1,)
+    assert np.isclose(tracker.mean()[0], 2.0)
+
+
+def test_streaming_stats_reset():
+    tracker = StreamingStats()
+    tracker.update_stats(np.array([[1.0, 2.0]]))
+
+    tracker.reset()
+
+    assert tracker.n_samples_seen_ == 0
+
+    with pytest.raises(ValueError):
+        tracker.mean()
+
+
+def test_streaming_stats_feature_mismatch_raises():
+    tracker = StreamingStats()
+    tracker.update_stats(np.array([[1.0, 2.0]]))
+
+    with pytest.raises(ValueError):
+        tracker.update_stats(np.array([[1.0, 2.0, 3.0]]))
+
+
+def test_streaming_stats_empty_chunk_raises():
+    tracker = StreamingStats()
+
+    with pytest.raises(ValueError):
+        tracker.update_stats(np.empty((0, 2)))

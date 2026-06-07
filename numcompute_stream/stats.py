@@ -173,3 +173,111 @@ class WelfordStats:
         self._M2 = 0.0
 
         return self
+class StreamingStats:
+    """
+    Track feature-wise running mean and variance over data chunks.
+
+    This class is useful when data arrives in batches and the full dataset does
+    not need to be stored in memory.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def update_stats(self, X_chunk):
+        """
+        Update running feature-wise statistics using one chunk.
+        """
+        X_chunk = np.asarray(X_chunk, dtype=float)
+
+        if X_chunk.ndim == 1:
+            X_chunk = X_chunk.reshape(-1, 1)
+
+        if X_chunk.ndim != 2:
+            raise ValueError("X_chunk must be a 1D or 2D array")
+
+        if X_chunk.shape[0] == 0:
+            raise ValueError("X_chunk must contain at least one sample")
+
+        if self.n_features_in_ is None:
+            self.n_features_in_ = X_chunk.shape[1]
+            self.n_samples_seen_ = 0
+            self.mean_ = np.zeros(self.n_features_in_, dtype=float)
+            self.var_ = np.zeros(self.n_features_in_, dtype=float)
+
+        if X_chunk.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"Expected {self.n_features_in_} features, got {X_chunk.shape[1]}"
+            )
+
+        chunk_count = X_chunk.shape[0]
+        chunk_mean = np.nanmean(X_chunk, axis=0)
+        chunk_var = np.nanvar(X_chunk, axis=0)
+
+        # If a feature is all NaN in this chunk, keep its current stats.
+        all_nan = np.isnan(chunk_mean)
+
+        if self.n_samples_seen_ == 0:
+            chunk_mean = np.where(all_nan, 0.0, chunk_mean)
+            chunk_var = np.where(all_nan, 0.0, chunk_var)
+
+            self.mean_ = chunk_mean
+            self.var_ = chunk_var
+            self.n_samples_seen_ = chunk_count
+            return self
+
+        old_count = self.n_samples_seen_
+        new_count = old_count + chunk_count
+
+        chunk_mean_safe = np.where(all_nan, self.mean_, chunk_mean)
+        chunk_var_safe = np.where(all_nan, self.var_, chunk_var)
+
+        delta = chunk_mean_safe - self.mean_
+
+        new_mean = self.mean_ + delta * chunk_count / new_count
+        new_var = (
+            old_count * self.var_
+            + chunk_count * chunk_var_safe
+            + (delta ** 2) * old_count * chunk_count / new_count
+        ) / new_count
+
+        self.mean_ = new_mean
+        self.var_ = new_var
+        self.n_samples_seen_ = int(new_count)
+
+        return self
+
+    def mean(self):
+        """
+        Return feature-wise running mean.
+        """
+        if self.n_samples_seen_ == 0:
+            raise ValueError("No chunks have been added yet.")
+
+        return self.mean_.copy()
+
+    def variance(self):
+        """
+        Return feature-wise running population variance.
+        """
+        if self.n_samples_seen_ == 0:
+            raise ValueError("No chunks have been added yet.")
+
+        return self.var_.copy()
+
+    def std(self):
+        """
+        Return feature-wise running population standard deviation.
+        """
+        return np.sqrt(self.variance())
+
+    def reset(self):
+        """
+        Reset all running statistics.
+        """
+        self.n_samples_seen_ = 0
+        self.n_features_in_ = None
+        self.mean_ = None
+        self.var_ = None
+
+        return self
