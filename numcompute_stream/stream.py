@@ -3,8 +3,13 @@ Streaming training utilities for NumCompute-Stream.
 
 This module provides StreamTrainer, a lightweight controller for training a
 model or pipeline on incoming data chunks.
+
+It records per-chunk scores and cumulative accuracy so the logs can be used by
+benchmarking scripts and visualisation functions.
 """
 
+import sys
+import time
 import numpy as np
 
 
@@ -24,6 +29,9 @@ class StreamTrainer:
         self.model = model
         self.metric_fn = metric_fn if metric_fn is not None else self._accuracy
         self.history_ = []
+        self.n_chunks_seen_ = 0
+        self.n_samples_seen_ = 0
+        self.correct_seen_ = 0
 
     def fit_chunk(self, X, y):
         """
@@ -34,9 +42,14 @@ class StreamTrainer:
         if not hasattr(self.model, "partial_fit"):
             raise AttributeError("model must implement partial_fit()")
 
+        start_time = time.perf_counter()
         self.model.partial_fit(X, y)
+        fit_time = time.perf_counter() - start_time
 
-        return self
+        return {
+            "fit_time": fit_time,
+            "n_samples": X.shape[0],
+        }
 
     def score_chunk(self, X, y):
         """
@@ -47,19 +60,92 @@ class StreamTrainer:
         if not hasattr(self.model, "predict"):
             raise AttributeError("model must implement predict()")
 
+        start_time = time.perf_counter()
         y_pred = self.model.predict(X)
+        predict_time = time.perf_counter() - start_time
+
         score = self.metric_fn(y, y_pred)
 
-        return score
+        return {
+            "score": float(score),
+            "predict_time": predict_time,
+            "y_pred": y_pred,
+        }
+
+    def fit_score_chunk(self, X, y):
+        """
+        Fit on one chunk, then score that same chunk and log the result.
+        """
+        X, y = self._validate_X_y(X, y)
+
+        fit_info = self.fit_chunk(X, y)
+        score_info = self.score_chunk(X, y)
+
+        correct = int(np.sum(score_info["y_pred"] == y))
+        self.correct_seen_ += correct
+        self.n_samples_seen_ += int(y.shape[0])
+        self.n_chunks_seen_ += 1
+
+        cumulative_accuracy = self.correct_seen_ / self.n_samples_seen_
+
+        log_entry = {
+            "chunk_index": self.n_chunks_seen_,
+            "n_samples": int(y.shape[0]),
+            "score": score_info["score"],
+            "cumulative_accuracy": float(cumulative_accuracy),
+            "fit_time": fit_info["fit_time"],
+            "predict_time": score_info["predict_time"],
+            "memory_bytes": self._estimate_memory_bytes(),
+        }
+
+        self.history_.append(log_entry)
+
+        return log_entry
 
     def fit_stream(self, chunks):
         """
-        Fit the model on an iterable of (X_chunk, y_chunk) pairs.
+        Fit and score the model on an iterable of (X_chunk, y_chunk) pairs.
         """
         for X_chunk, y_chunk in chunks:
-            self.fit_chunk(X_chunk, y_chunk)
+            self.fit_score_chunk(X_chunk, y_chunk)
 
         return self
+
+    def get_history(self, key=None):
+        """
+        Return full history or one logged value across chunks.
+        """
+        if key is None:
+            return list(self.history_)
+
+        return [entry[key] for entry in self.history_]
+
+    def reset_logs(self):
+        """
+        Reset stream logs and cumulative counters.
+        """
+        self.history_ = []
+        self.n_chunks_seen_ = 0
+        self.n_samples_seen_ = 0
+        self.correct_seen_ = 0
+
+        return self
+
+    def _estimate_memory_bytes(self):
+        """
+        Estimate memory usage of the model object.
+
+        This is a lightweight approximation using sys.getsizeof().
+        """
+        total = sys.getsizeof(self.model)
+
+        for value in getattr(self.model, "__dict__", {}).values():
+            total += sys.getsizeof(value)
+
+            if isinstance(value, np.ndarray):
+                total += value.nbytes
+
+        return int(total)
 
     def _validate_X_y(self, X, y):
         """
