@@ -230,3 +230,111 @@ def test_ensemble_partial_fit_creates_expected_number_of_estimators():
     model.partial_fit(X, y)
 
     assert len(model.estimators_) == 7
+def test_ensemble_invalid_n_estimators_raises():
+    with pytest.raises(ValueError):
+        EnsembleClassifier(n_estimators=0)
+
+
+def test_ensemble_invalid_max_depth_raises():
+    with pytest.raises(ValueError):
+        EnsembleClassifier(max_depth=-1)
+
+
+def test_ensemble_invalid_min_samples_split_raises():
+    with pytest.raises(ValueError):
+        EnsembleClassifier(min_samples_split=1)
+
+
+def test_ensemble_invalid_criterion_raises():
+    with pytest.raises(ValueError):
+        EnsembleClassifier(criterion="gain")
+
+
+def test_ensemble_invalid_max_features_raises():
+    with pytest.raises(ValueError):
+        EnsembleClassifier(max_features=0)
+
+
+def test_ensemble_invalid_bootstrap_raises():
+    with pytest.raises(ValueError):
+        EnsembleClassifier(bootstrap="yes")
+
+
+def test_ensemble_reset_clears_state():
+    X = np.array([[0.0], [1.0], [2.0]])
+    y = np.array([0, 0, 1])
+
+    model = EnsembleClassifier(n_estimators=3, random_state=42)
+    model.fit(X, y)
+    model.reset()
+
+    assert model.estimators_ == []
+    assert model.classes_ is None
+
+    with pytest.raises(ValueError):
+        model.predict(X)
+
+
+def test_ensemble_predict_rejects_empty_X():
+    X = np.array([[0.0], [1.0]])
+    y = np.array([0, 1])
+
+    model = EnsembleClassifier()
+    model.fit(X, y)
+
+    with pytest.raises(ValueError):
+        model.predict(np.empty((0, 1)))
+
+
+def test_ensemble_predict_rejects_nan_X():
+    X = np.array([[0.0], [1.0]])
+    y = np.array([0, 1])
+
+    model = EnsembleClassifier()
+    model.fit(X, y)
+
+    with pytest.raises(ValueError):
+        model.predict(np.array([[np.nan]]))
+
+
+def test_ensemble_repr_contains_class_name():
+    model = EnsembleClassifier(n_estimators=3)
+
+    assert "EnsembleClassifier" in repr(model)
+
+
+def test_ensemble_predictions_are_reproducible_with_seed():
+    X = np.array([
+        [0.0],
+        [1.0],
+        [2.0],
+        [3.0],
+        [4.0],
+        [5.0],
+    ])
+    y = np.array([0, 0, 0, 1, 1, 1])
+
+    model1 = EnsembleClassifier(n_estimators=5, max_depth=2, random_state=123)
+    model2 = EnsembleClassifier(n_estimators=5, max_depth=2, random_state=123)
+
+    model1.fit(X, y)
+    model2.fit(X, y)
+
+    assert np.array_equal(model1.predict(X), model2.predict(X))
+
+
+def test_ensemble_max_depth_zero_predicts_majority_class():
+    X = np.array([[0.0], [1.0], [2.0]])
+    y = np.array([0, 1, 1])
+
+    model = EnsembleClassifier(
+        n_estimators=3,
+        max_depth=0,
+        bootstrap=False,
+        random_state=42,
+    )
+    model.fit(X, y)
+
+    preds = model.predict(np.array([[10.0], [20.0]]))
+
+    assert np.array_equal(preds, np.array([1, 1]))

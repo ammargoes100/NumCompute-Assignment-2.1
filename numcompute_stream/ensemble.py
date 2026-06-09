@@ -4,8 +4,9 @@ Tree ensemble models for NumCompute-Stream.
 This module implements a small Random Forest / Bagging-style classifier from
 scratch using NumPy and the local DecisionTreeClassifier.
 
-The first version supports normal batch fitting and prediction. Streaming
-support is added separately through partial_fit().
+The ensemble supports batch fitting through fit() and stream-style updates
+through partial_fit(). In the streaming version, chunks are accumulated and the
+ensemble is rebuilt from bootstrap samples of all data seen so far.
 """
 
 import numpy as np
@@ -45,6 +46,37 @@ class EnsembleClassifier:
         bootstrap=True,
         random_state=None,
     ):
+        if (
+            not isinstance(n_estimators, int)
+            or isinstance(n_estimators, bool)
+            or n_estimators < 1
+        ):
+            raise ValueError("n_estimators must be a positive integer")
+
+        if not isinstance(max_depth, int) or isinstance(max_depth, bool) or max_depth < 0:
+            raise ValueError("max_depth must be a non-negative integer")
+
+        if (
+            not isinstance(min_samples_split, int)
+            or isinstance(min_samples_split, bool)
+            or min_samples_split < 2
+        ):
+            raise ValueError("min_samples_split must be an integer >= 2")
+
+        if criterion not in ("gini", "entropy"):
+            raise ValueError("criterion must be 'gini' or 'entropy'")
+
+        if max_features is not None:
+            if (
+                not isinstance(max_features, int)
+                or isinstance(max_features, bool)
+                or max_features < 1
+            ):
+                raise ValueError("max_features must be None or a positive integer")
+
+        if not isinstance(bootstrap, bool):
+            raise ValueError("bootstrap must be a boolean value")
+
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
@@ -57,6 +89,7 @@ class EnsembleClassifier:
         self.classes_ = None
         self.n_features_in_ = None
         self.rng_ = np.random.default_rng(random_state)
+
         self._X_seen = None
         self._y_seen = None
 
@@ -71,24 +104,11 @@ class EnsembleClassifier:
 
         self.classes_ = np.unique(y)
         self.n_features_in_ = X.shape[1]
-        self.estimators_ = []
 
-        for i in range(self.n_estimators):
-            X_sample, y_sample = self._sample_training_data(X, y)
-
-            tree = DecisionTreeClassifier(
-                max_depth=self.max_depth,
-                min_samples_split=self.min_samples_split,
-                criterion=self.criterion,
-                max_features=self.max_features,
-                random_state=self._tree_seed(i),
-            )
-
-            tree.fit(X_sample, y_sample)
-            self.estimators_.append(tree)
+        self._fit_estimators_from_seen_data()
 
         return self
-    
+
     def partial_fit(self, X, y):
         """
         Update the ensemble using one incoming data chunk.
@@ -140,6 +160,19 @@ class EnsembleClassifier:
 
         return self._majority_vote(all_predictions)
 
+    def reset(self):
+        """
+        Clear all learned ensemble state.
+        """
+        self.estimators_ = []
+        self.classes_ = None
+        self.n_features_in_ = None
+        self.rng_ = np.random.default_rng(self.random_state)
+        self._X_seen = None
+        self._y_seen = None
+
+        return self
+
     def _validate_X_y(self, X, y):
         """
         Validate training data.
@@ -179,7 +212,14 @@ class EnsembleClassifier:
         if X.ndim != 2:
             raise ValueError("X must be a 1D or 2D array")
 
+        if X.shape[0] == 0:
+            raise ValueError("X must contain at least one sample")
+
+        if np.isnan(X).any():
+            raise ValueError("EnsembleClassifier does not accept NaN values in X")
+
         return X
+
     def _fit_estimators_from_seen_data(self):
         """
         Fit all trees using the accumulated streaming data.
@@ -202,6 +242,7 @@ class EnsembleClassifier:
 
             tree.fit(X_sample, y_sample)
             self.estimators_.append(tree)
+
     def _sample_training_data(self, X, y):
         """
         Sample training data for one tree.
@@ -237,3 +278,14 @@ class EnsembleClassifier:
             return None
 
         return self.random_state + index
+
+    def __repr__(self):
+        return (
+            "EnsembleClassifier("
+            f"n_estimators={self.n_estimators}, "
+            f"max_depth={self.max_depth}, "
+            f"min_samples_split={self.min_samples_split}, "
+            f"criterion='{self.criterion}', "
+            f"max_features={self.max_features}, "
+            f"bootstrap={self.bootstrap})"
+        )
