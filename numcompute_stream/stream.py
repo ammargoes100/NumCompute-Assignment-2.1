@@ -4,8 +4,9 @@ Streaming training utilities for NumCompute-Stream.
 This module provides StreamTrainer, a lightweight controller for training a
 model or pipeline on incoming data chunks.
 
-It records per-chunk scores and cumulative accuracy so the logs can be used by
-benchmarking scripts and visualisation functions.
+It records per-chunk scores, cumulative accuracy, fit time, prediction time,
+and an approximate memory footprint so the logs can be used by benchmarking
+scripts and visualisation functions.
 """
 
 import sys
@@ -26,6 +27,12 @@ class StreamTrainer:
     """
 
     def __init__(self, model, metric_fn=None):
+        if model is None:
+            raise ValueError("model cannot be None")
+
+        if metric_fn is not None and not callable(metric_fn):
+            raise ValueError("metric_fn must be callable")
+
         self.model = model
         self.metric_fn = metric_fn if metric_fn is not None else self._accuracy
         self.history_ = []
@@ -48,7 +55,7 @@ class StreamTrainer:
 
         return {
             "fit_time": fit_time,
-            "n_samples": X.shape[0],
+            "n_samples": int(X.shape[0]),
         }
 
     def score_chunk(self, X, y):
@@ -63,6 +70,11 @@ class StreamTrainer:
         start_time = time.perf_counter()
         y_pred = self.model.predict(X)
         predict_time = time.perf_counter() - start_time
+
+        y_pred = np.asarray(y_pred)
+
+        if y_pred.shape != y.shape:
+            raise ValueError("model predictions must have the same shape as y")
 
         score = self.metric_fn(y, y_pred)
 
@@ -106,7 +118,11 @@ class StreamTrainer:
         """
         Fit and score the model on an iterable of (X_chunk, y_chunk) pairs.
         """
-        for X_chunk, y_chunk in chunks:
+        for chunk in chunks:
+            if not isinstance(chunk, tuple) or len(chunk) != 2:
+                raise ValueError("each stream chunk must be a tuple (X_chunk, y_chunk)")
+
+            X_chunk, y_chunk = chunk
             self.fit_score_chunk(X_chunk, y_chunk)
 
         return self
@@ -117,6 +133,12 @@ class StreamTrainer:
         """
         if key is None:
             return list(self.history_)
+
+        if len(self.history_) == 0:
+            return []
+
+        if key not in self.history_[0]:
+            raise KeyError(f"history key '{key}' not found")
 
         return [entry[key] for entry in self.history_]
 
@@ -185,3 +207,11 @@ class StreamTrainer:
             raise ValueError("y_true and y_pred must have the same shape")
 
         return float(np.mean(y_true == y_pred))
+
+    def __repr__(self):
+        return (
+            "StreamTrainer("
+            f"model={self.model.__class__.__name__}, "
+            f"n_chunks_seen_={self.n_chunks_seen_}, "
+            f"n_samples_seen_={self.n_samples_seen_})"
+        )

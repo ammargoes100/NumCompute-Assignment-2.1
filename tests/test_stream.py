@@ -7,7 +7,12 @@ import pytest
 
 from numcompute_stream.stream import StreamTrainer
 from numcompute_stream.tree import DecisionTreeClassifier
+class BadPredictShapeModel:
+    def partial_fit(self, X, y):
+        return self
 
+    def predict(self, X):
+        return np.zeros((X.shape[0], 1), dtype=int)
 
 class DummyStreamingModel:
     def __init__(self):
@@ -196,3 +201,73 @@ def test_stream_trainer_reset_logs():
     assert trainer.n_chunks_seen_ == 0
     assert trainer.n_samples_seen_ == 0
     assert trainer.correct_seen_ == 0
+
+def test_stream_trainer_rejects_none_model():
+    with pytest.raises(ValueError):
+        StreamTrainer(None)
+
+
+def test_stream_trainer_rejects_non_callable_metric():
+    with pytest.raises(ValueError):
+        StreamTrainer(DummyStreamingModel(), metric_fn="accuracy")
+
+
+def test_stream_trainer_custom_metric_function():
+    def zero_metric(y_true, y_pred):
+        return 0.0
+
+    X = np.array([[0.0], [1.0]])
+    y = np.array([0, 1])
+
+    model = DummyStreamingModel()
+    trainer = StreamTrainer(model, metric_fn=zero_metric)
+
+    trainer.fit_chunk(X, y)
+    info = trainer.score_chunk(X, y)
+
+    assert info["score"] == 0.0
+
+
+def test_stream_trainer_score_rejects_bad_prediction_shape():
+    X = np.array([[0.0], [1.0]])
+    y = np.array([0, 1])
+
+    model = BadPredictShapeModel()
+    trainer = StreamTrainer(model)
+
+    trainer.fit_chunk(X, y)
+
+    with pytest.raises(ValueError):
+        trainer.score_chunk(X, y)
+
+
+def test_stream_trainer_fit_stream_rejects_bad_chunk_format():
+    trainer = StreamTrainer(DummyStreamingModel())
+
+    with pytest.raises(ValueError):
+        trainer.fit_stream([np.array([[1.0]])])
+
+
+def test_stream_trainer_get_history_unknown_key_raises():
+    X = np.array([[0.0], [1.0]])
+    y = np.array([0, 0])
+
+    model = DummyStreamingModel()
+    trainer = StreamTrainer(model)
+
+    trainer.fit_score_chunk(X, y)
+
+    with pytest.raises(KeyError):
+        trainer.get_history("missing")
+
+
+def test_stream_trainer_get_history_empty_returns_empty_list():
+    trainer = StreamTrainer(DummyStreamingModel())
+
+    assert trainer.get_history("score") == []
+
+
+def test_stream_trainer_repr_contains_class_name():
+    trainer = StreamTrainer(DummyStreamingModel())
+
+    assert "StreamTrainer" in repr(trainer)
