@@ -210,7 +210,7 @@ def auc(x, y):
         raise ValueError("at least two points are required")
 
     order = np.argsort(x)
-    return float(np.trapezoid(y[order], x[order]))
+    return float(np.trapz(y[order], x[order]))
 class StreamingAccuracy:
     """
     Accumulate classification accuracy over multiple chunks.

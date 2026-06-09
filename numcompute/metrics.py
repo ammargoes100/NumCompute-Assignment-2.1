@@ -185,4 +185,4 @@ def auc(x, y):
     order = np.argsort(x)
 
     
-    return float(np.trapezoid(y[order], x[order]))
+    return float(np.trapz(y[order], x[order]))
