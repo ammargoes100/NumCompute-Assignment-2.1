@@ -57,12 +57,17 @@ class EnsembleClassifier:
         self.classes_ = None
         self.n_features_in_ = None
         self.rng_ = np.random.default_rng(random_state)
+        self._X_seen = None
+        self._y_seen = None
 
     def fit(self, X, y):
         """
         Fit all trees on the given batch of data.
         """
         X, y = self._validate_X_y(X, y)
+
+        self._X_seen = X.copy()
+        self._y_seen = y.copy()
 
         self.classes_ = np.unique(y)
         self.n_features_in_ = X.shape[1]
@@ -81,6 +86,36 @@ class EnsembleClassifier:
 
             tree.fit(X_sample, y_sample)
             self.estimators_.append(tree)
+
+        return self
+    
+    def partial_fit(self, X, y):
+        """
+        Update the ensemble using one incoming data chunk.
+
+        The implementation stores chunks seen so far and refits each tree using
+        bootstrap samples from the accumulated stream. This provides a simple
+        streaming interface while keeping the ensemble deterministic and easy
+        to inspect.
+        """
+        X, y = self._validate_X_y(X, y)
+
+        if self._X_seen is None:
+            self._X_seen = X.copy()
+            self._y_seen = y.copy()
+        else:
+            if X.shape[1] != self.n_features_in_:
+                raise ValueError(
+                    f"Expected {self.n_features_in_} features, got {X.shape[1]}"
+                )
+
+            self._X_seen = np.vstack([self._X_seen, X])
+            self._y_seen = np.concatenate([self._y_seen, y])
+
+        self.classes_ = np.unique(self._y_seen)
+        self.n_features_in_ = self._X_seen.shape[1]
+
+        self._fit_estimators_from_seen_data()
 
         return self
 
@@ -145,7 +180,28 @@ class EnsembleClassifier:
             raise ValueError("X must be a 1D or 2D array")
 
         return X
+    def _fit_estimators_from_seen_data(self):
+        """
+        Fit all trees using the accumulated streaming data.
+        """
+        self.estimators_ = []
 
+        for i in range(self.n_estimators):
+            X_sample, y_sample = self._sample_training_data(
+                self._X_seen,
+                self._y_seen,
+            )
+
+            tree = DecisionTreeClassifier(
+                max_depth=self.max_depth,
+                min_samples_split=self.min_samples_split,
+                criterion=self.criterion,
+                max_features=self.max_features,
+                random_state=self._tree_seed(i),
+            )
+
+            tree.fit(X_sample, y_sample)
+            self.estimators_.append(tree)
     def _sample_training_data(self, X, y):
         """
         Sample training data for one tree.

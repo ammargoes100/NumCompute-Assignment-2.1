@@ -151,3 +151,82 @@ def test_ensemble_feature_mismatch_on_predict_raises():
 
     with pytest.raises(ValueError):
         model.predict(np.array([[1.0, 2.0]]))
+def test_ensemble_partial_fit_first_chunk_trains_model():
+    X = np.array([
+        [0.0],
+        [1.0],
+        [2.0],
+        [3.0],
+    ])
+    y = np.array([0, 0, 1, 1])
+
+    model = EnsembleClassifier(n_estimators=3, max_depth=2, random_state=42)
+    model.partial_fit(X, y)
+
+    preds = model.predict(X)
+
+    assert np.array_equal(preds, y)
+
+
+def test_ensemble_partial_fit_accumulates_chunks():
+    X1 = np.array([[0.0], [1.0]])
+    y1 = np.array([0, 0])
+
+    X2 = np.array([[2.0], [3.0]])
+    y2 = np.array([1, 1])
+
+    X_all = np.vstack([X1, X2])
+
+    model = EnsembleClassifier(
+        n_estimators=5,
+        max_depth=2,
+        bootstrap=False,
+        random_state=42,
+    )
+    model.partial_fit(X1, y1)
+    model.partial_fit(X2, y2)
+
+    preds = model.predict(X_all)
+
+    assert np.array_equal(preds, np.array([0, 0, 1, 1]))
+
+
+def test_ensemble_partial_fit_updates_classes():
+    X1 = np.array([[0.0], [1.0]])
+    y1 = np.array([0, 0])
+
+    X2 = np.array([[2.0], [3.0]])
+    y2 = np.array([1, 1])
+
+    model = EnsembleClassifier(n_estimators=3, max_depth=2, random_state=42)
+    model.partial_fit(X1, y1)
+
+    assert np.array_equal(model.classes_, np.array([0]))
+
+    model.partial_fit(X2, y2)
+
+    assert np.array_equal(model.classes_, np.array([0, 1]))
+
+
+def test_ensemble_partial_fit_feature_mismatch_raises():
+    X1 = np.array([[0.0], [1.0]])
+    y1 = np.array([0, 0])
+
+    X2 = np.array([[2.0, 3.0]])
+    y2 = np.array([1])
+
+    model = EnsembleClassifier(n_estimators=3, max_depth=2, random_state=42)
+    model.partial_fit(X1, y1)
+
+    with pytest.raises(ValueError):
+        model.partial_fit(X2, y2)
+
+
+def test_ensemble_partial_fit_creates_expected_number_of_estimators():
+    X = np.array([[0.0], [1.0], [2.0], [3.0]])
+    y = np.array([0, 0, 1, 1])
+
+    model = EnsembleClassifier(n_estimators=7, max_depth=2, random_state=42)
+    model.partial_fit(X, y)
+
+    assert len(model.estimators_) == 7
