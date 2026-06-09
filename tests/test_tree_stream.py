@@ -134,3 +134,63 @@ def test_tree_feature_mismatch_on_predict_raises():
 
     with pytest.raises(ValueError):
         tree.predict(np.array([[1.0, 2.0]]))
+def test_tree_partial_fit_first_chunk_trains_model():
+    X = np.array([[0.0], [1.0], [2.0], [3.0]])
+    y = np.array([0, 0, 1, 1])
+
+    tree = DecisionTreeClassifier(max_depth=2)
+    tree.partial_fit(X, y)
+
+    preds = tree.predict(X)
+
+    assert np.array_equal(preds, y)
+
+
+def test_tree_partial_fit_accumulates_chunks():
+    X1 = np.array([[0.0], [1.0]])
+    y1 = np.array([0, 0])
+
+    X2 = np.array([[2.0], [3.0]])
+    y2 = np.array([1, 1])
+
+    X_all = np.vstack([X1, X2])
+    y_all = np.concatenate([y1, y2])
+
+    tree = DecisionTreeClassifier(max_depth=2)
+    tree.partial_fit(X1, y1)
+    tree.partial_fit(X2, y2)
+
+    preds = tree.predict(X_all)
+
+    assert np.array_equal(preds, y_all)
+
+
+def test_tree_partial_fit_updates_classes():
+    X1 = np.array([[0.0], [1.0]])
+    y1 = np.array([0, 0])
+
+    X2 = np.array([[2.0], [3.0]])
+    y2 = np.array([1, 1])
+
+    tree = DecisionTreeClassifier(max_depth=2)
+    tree.partial_fit(X1, y1)
+
+    assert np.array_equal(tree.classes_, np.array([0]))
+
+    tree.partial_fit(X2, y2)
+
+    assert np.array_equal(tree.classes_, np.array([0, 1]))
+
+
+def test_tree_partial_fit_feature_mismatch_raises():
+    X1 = np.array([[0.0], [1.0]])
+    y1 = np.array([0, 0])
+
+    X2 = np.array([[2.0, 3.0]])
+    y2 = np.array([1])
+
+    tree = DecisionTreeClassifier(max_depth=2)
+    tree.partial_fit(X1, y1)
+
+    with pytest.raises(ValueError):
+        tree.partial_fit(X2, y2)
