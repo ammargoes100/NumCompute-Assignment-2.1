@@ -217,10 +217,21 @@ class StreamingStats:
             )
 
         chunk_count = X_chunk.shape[0]
-        chunk_mean = np.nanmean(X_chunk, axis=0)
-        chunk_var = np.nanvar(X_chunk, axis=0)
-
-        all_nan = np.isnan(chunk_mean)
+        valid_count = np.count_nonzero(~np.isnan(X_chunk), axis=0)
+        chunk_sum = np.nansum(X_chunk, axis=0)
+        chunk_mean = np.divide(
+            chunk_sum,
+            valid_count,
+            out=np.zeros_like(chunk_sum, dtype=float),
+            where=valid_count != 0,
+        )
+        chunk_var = np.zeros(self.n_features_in_, dtype=float)
+        for feature_index in range(self.n_features_in_):
+            valid_values = X_chunk[:, feature_index]
+            valid_values = valid_values[~np.isnan(valid_values)]
+            if valid_values.size > 0:
+                chunk_var[feature_index] = np.var(valid_values)
+        all_nan = valid_count == 0
 
         if self.n_samples_seen_ == 0:
             chunk_mean = np.where(all_nan, 0.0, chunk_mean)
