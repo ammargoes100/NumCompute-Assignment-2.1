@@ -194,3 +194,88 @@ def test_tree_partial_fit_feature_mismatch_raises():
 
     with pytest.raises(ValueError):
         tree.partial_fit(X2, y2)
+def test_tree_invalid_max_depth_raises():
+    with pytest.raises(ValueError):
+        DecisionTreeClassifier(max_depth=-1)
+
+
+def test_tree_invalid_min_samples_split_raises():
+    with pytest.raises(ValueError):
+        DecisionTreeClassifier(min_samples_split=1)
+
+
+def test_tree_invalid_criterion_raises():
+    with pytest.raises(ValueError):
+        DecisionTreeClassifier(criterion="gain")
+
+
+def test_tree_invalid_max_features_raises():
+    with pytest.raises(ValueError):
+        DecisionTreeClassifier(max_features=0)
+
+
+def test_tree_max_depth_zero_predicts_majority_class():
+    X = np.array([[0.0], [1.0], [2.0]])
+    y = np.array([0, 1, 1])
+
+    tree = DecisionTreeClassifier(max_depth=0)
+    tree.fit(X, y)
+
+    preds = tree.predict(np.array([[10.0], [20.0]]))
+
+    assert np.array_equal(preds, np.array([1, 1]))
+
+
+def test_tree_min_samples_split_stops_growth():
+    X = np.array([[0.0], [1.0], [2.0], [3.0]])
+    y = np.array([0, 0, 1, 1])
+
+    tree = DecisionTreeClassifier(max_depth=3, min_samples_split=10)
+    tree.fit(X, y)
+
+    preds = tree.predict(X)
+
+    assert np.array_equal(preds, np.array([0, 0, 0, 0]))
+
+
+def test_tree_reset_clears_state():
+    X = np.array([[0.0], [1.0], [2.0]])
+    y = np.array([0, 0, 1])
+
+    tree = DecisionTreeClassifier()
+    tree.fit(X, y)
+    tree.reset()
+
+    assert tree.tree_ is None
+    assert tree.classes_ is None
+
+    with pytest.raises(ValueError):
+        tree.predict(X)
+
+
+def test_tree_predict_rejects_empty_X():
+    X = np.array([[0.0], [1.0]])
+    y = np.array([0, 1])
+
+    tree = DecisionTreeClassifier()
+    tree.fit(X, y)
+
+    with pytest.raises(ValueError):
+        tree.predict(np.empty((0, 1)))
+
+
+def test_tree_predict_rejects_nan_X():
+    X = np.array([[0.0], [1.0]])
+    y = np.array([0, 1])
+
+    tree = DecisionTreeClassifier()
+    tree.fit(X, y)
+
+    with pytest.raises(ValueError):
+        tree.predict(np.array([[np.nan]]))
+
+
+def test_tree_repr_contains_class_name():
+    tree = DecisionTreeClassifier(max_depth=2)
+
+    assert "DecisionTreeClassifier" in repr(tree)

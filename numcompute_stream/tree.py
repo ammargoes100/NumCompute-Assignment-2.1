@@ -2,9 +2,12 @@
 Decision tree model for NumCompute-Stream.
 
 This module implements a small decision tree classifier from scratch using
-NumPy. The first version supports normal batch fitting and prediction.
+NumPy. It supports batch fitting through fit() and stream-style updates through
+partial_fit().
 
-Streaming support is added separately through partial_fit().
+The streaming implementation stores chunks seen so far and rebuilds a
+depth-limited tree after each update. This keeps the model simple,
+deterministic, and compatible with the shared streaming interface.
 """
 
 import numpy as np
@@ -36,6 +39,27 @@ class DecisionTreeClassifier:
         max_features=None,
         random_state=None,
     ):
+        if not isinstance(max_depth, int) or isinstance(max_depth, bool) or max_depth < 0:
+            raise ValueError("max_depth must be a non-negative integer")
+
+        if (
+            not isinstance(min_samples_split, int)
+            or isinstance(min_samples_split, bool)
+            or min_samples_split < 2
+        ):
+            raise ValueError("min_samples_split must be an integer >= 2")
+
+        if criterion not in ("gini", "entropy"):
+            raise ValueError("criterion must be 'gini' or 'entropy'")
+
+        if max_features is not None:
+            if (
+                not isinstance(max_features, int)
+                or isinstance(max_features, bool)
+                or max_features < 1
+            ):
+                raise ValueError("max_features must be None or a positive integer")
+
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.criterion = criterion
@@ -46,6 +70,7 @@ class DecisionTreeClassifier:
         self.classes_ = None
         self.n_features_in_ = None
         self.rng_ = np.random.default_rng(random_state)
+
         self._X_seen = None
         self._y_seen = None
 
@@ -63,6 +88,7 @@ class DecisionTreeClassifier:
         self.tree_ = self._build_tree(X, y, depth=0)
 
         return self
+
     def partial_fit(self, X, y):
         """
         Update the tree using one incoming data chunk.
@@ -107,6 +133,19 @@ class DecisionTreeClassifier:
 
         return np.array([self._predict_one(row, self.tree_) for row in X])
 
+    def reset(self):
+        """
+        Clear all learned tree state.
+        """
+        self.tree_ = None
+        self.classes_ = None
+        self.n_features_in_ = None
+        self._X_seen = None
+        self._y_seen = None
+        self.rng_ = np.random.default_rng(self.random_state)
+
+        return self
+
     def _validate_X_y(self, X, y):
         """
         Validate training data.
@@ -145,6 +184,12 @@ class DecisionTreeClassifier:
 
         if X.ndim != 2:
             raise ValueError("X must be a 1D or 2D array")
+
+        if X.shape[0] == 0:
+            raise ValueError("X must contain at least one sample")
+
+        if np.isnan(X).any():
+            raise ValueError("DecisionTreeClassifier does not accept NaN values in X")
 
         return X
 
@@ -266,10 +311,7 @@ class DecisionTreeClassifier:
         if self.criterion == "gini":
             return self._gini(y)
 
-        if self.criterion == "entropy":
-            return self._entropy(y)
-
-        raise ValueError("criterion must be 'gini' or 'entropy'")
+        return self._entropy(y)
 
     def _gini(self, y):
         """
@@ -278,7 +320,7 @@ class DecisionTreeClassifier:
         _, counts = np.unique(y, return_counts=True)
         probabilities = counts / counts.sum()
 
-        return 1.0 - np.sum(probabilities ** 2)
+        return float(1.0 - np.sum(probabilities ** 2))
 
     def _entropy(self, y):
         """
@@ -313,3 +355,12 @@ class DecisionTreeClassifier:
                 node = node["right"]
 
         return node["prediction"]
+
+    def __repr__(self):
+        return (
+            "DecisionTreeClassifier("
+            f"max_depth={self.max_depth}, "
+            f"min_samples_split={self.min_samples_split}, "
+            f"criterion='{self.criterion}', "
+            f"max_features={self.max_features})"
+        )
